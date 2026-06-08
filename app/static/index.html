@@ -66,6 +66,25 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 /* Chat */
 .chat-head{padding:14px 18px;border-bottom:1px solid var(--line);background:#fff;flex-shrink:0}
 .chat-head h2{margin:0;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.chat-head .actions{display:flex;gap:6px}
+
+/* History drawer */
+.hist-drawer{position:absolute;top:0;right:0;width:320px;height:100%;background:#fff;border-left:1px solid var(--line);display:none;flex-direction:column;z-index:10;box-shadow:-4px 0 12px rgba(0,0,0,.05)}
+.hist-drawer.open{display:flex}
+.hist-head{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.hist-list{flex:1;overflow-y:auto;padding:8px}
+.hist-row{padding:10px 12px;border-radius:6px;cursor:pointer;margin-bottom:4px;font-size:13px;border:1px solid transparent}
+.hist-row:hover{background:#f8fafc;border-color:var(--line)}
+.hist-row.current{background:#eff6ff;border-color:var(--blue)}
+.hist-row .title{font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-row .meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between}
+.hist-row .acts{margin-top:4px;display:none;gap:8px;font-size:11px}
+.hist-row:hover .acts{display:flex}
+.hist-row .acts a{color:var(--blue);cursor:pointer}
+.hist-row .acts a.danger{color:var(--red)}
+
+.streaming-cursor::after{content:"▊";animation:blink 1s steps(2) infinite;color:var(--blue);font-weight:normal;margin-left:1px}
+@keyframes blink{50%{opacity:0}}
 .chat-msgs{flex:1;overflow-y:auto;padding:16px 24px}
 .welcome{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px 28px;max-width:760px;margin:20px auto}
 .welcome h3{margin:0 0 8px;font-size:16px}
@@ -255,11 +274,15 @@ function renderWorkspace(){
       </div>
 
       <!-- Right: chat -->
-      <div class="chat-pane">
+      <div class="chat-pane" style="position:relative">
         <div class="chat-head">
           <h2>
-            <span>💬 AI 诊断与方案</span>
-            <a onclick="viewProjects()" style="font-size:12px;color:#6b7280;cursor:pointer">← 返回项目列表</a>
+            <span>💬 AI 诊断与方案 <span id="curSessionTitle" class="muted" style="font-weight:normal;font-size:12px;margin-left:8px"></span></span>
+            <div class="actions">
+              <button class="btn btn-sec btn-sm" onclick="newSession()">+ 新对话</button>
+              <button class="btn btn-sec btn-sm" onclick="toggleHistory()">📋 历史</button>
+              <a onclick="viewProjects()" style="font-size:12px;color:#6b7280;cursor:pointer;padding:5px 0">← 返回</a>
+            </div>
           </h2>
         </div>
         <div class="chat-msgs" id="chatMsgs"></div>
@@ -267,8 +290,17 @@ function renderWorkspace(){
           <div id="contextHint" class="muted" style="font-size:11px;margin-bottom:6px"></div>
           <div class="chat-input">
             <textarea id="chatInput" placeholder="输入你的问题…（Ctrl/Cmd + Enter 发送）" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')sendMsg()"></textarea>
-            <button class="btn" onclick="sendMsg()">发送</button>
+            <button class="btn" onclick="sendMsg()" id="sendBtn">发送</button>
           </div>
+        </div>
+
+        <!-- History drawer -->
+        <div class="hist-drawer" id="histDrawer">
+          <div class="hist-head">
+            <b>📋 历史对话</b>
+            <a onclick="toggleHistory()" style="cursor:pointer;color:#6b7280">×</a>
+          </div>
+          <div class="hist-list" id="histList">加载中…</div>
         </div>
       </div>
     </div>`;
@@ -524,30 +556,164 @@ th{background:#dbeafe;color:#1e40af;font-weight:600}
 
 async function sendMsg(){
   const inp = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
   const txt = inp.value.trim(); if(!txt) return;
   const refDocIds = Array.from(selectedDocs);
-  // collect filenames for display
   const docRows = document.querySelectorAll('.doc-row.selected .name span:last-child');
   const refNames = Array.from(docRows).map(el=>el.textContent);
   appendMsg('user', txt, refNames);
-  inp.value=''; inp.disabled=true;
-  // placeholder bubble
+  inp.value=''; inp.disabled=true; sendBtn.disabled=true;
+
   const wrap = document.getElementById('chatMsgs');
-  wrap.insertAdjacentHTML('beforeend', `<div class="msg assistant" id="thinking"><div class="av">AI</div><div class="bubble muted">🤔 思考中…</div></div>`);
+  // Create assistant bubble we'll stream into
+  const myId = 'm'+(++msgSeq);
+  wrap.insertAdjacentHTML('beforeend',
+    `<div class="msg assistant" id="${myId}" data-raw="">
+       <div class="av">AI</div>
+       <div class="bubble"><span class="muted streaming-cursor">🤔 思考中…</span></div>
+     </div>`);
   wrap.scrollTop = wrap.scrollHeight;
+  const bubble = document.querySelector(`#${myId} .bubble`);
+
+  let accumulated = '';
+  let firstChunkReceived = false;
+
   try{
-    const j = await api('/api/chat', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({project_id:currentProject.id, message:txt, session_id:currentSession, referenced_doc_ids:refDocIds})});
-    currentSession = j.session_id;
-    document.getElementById('thinking')?.remove();
-    appendMsg('assistant', j.reply);
+    const r = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+      body: JSON.stringify({project_id:currentProject.id, message:txt,
+                            session_id:currentSession, referenced_doc_ids:refDocIds,
+                            stream: true})
+    });
+    if(!r.ok){
+      const e = await r.json().catch(()=>({detail:r.statusText}));
+      throw new Error(e.detail||'失败');
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    while(true){
+      const {value, done} = await reader.read();
+      if(done) break;
+      const chunk = decoder.decode(value, {stream:true});
+
+      // First chunk contains session id marker: ​__SID__{id}​
+      if(!firstChunkReceived && chunk.includes('__SID__')){
+        const m = chunk.match(/​__SID__(\d+)​/);
+        if(m){ currentSession = parseInt(m[1]); }
+        const cleaned = chunk.replace(/​__SID__\d+​/, '');
+        accumulated += cleaned;
+      } else {
+        accumulated += chunk;
+      }
+      firstChunkReceived = true;
+
+      // Re-render markdown progressively
+      const renderedHtml = (window.marked) ? marked.parse(accumulated) : escapeHtml(accumulated);
+      bubble.innerHTML = renderedHtml + '<span class="streaming-cursor"></span>';
+      document.getElementById(myId).dataset.raw = encodeURIComponent(accumulated);
+      wrap.scrollTop = wrap.scrollHeight;
+    }
+
+    // Stream finished: add action buttons + ref tag
+    const refsHtml = refNames.length ? `<div class="refs">📎 参考 ${refNames.length} 份：${escapeHtml(refNames.join(', '))}</div>` : '';
+    const actions = `<div class="msg-actions">
+        <a onclick="openMsgPage('${myId}')">📄 新窗口查看</a>
+        <a onclick="downloadMd('${myId}')">📥 下载 .md</a>
+        <a onclick="copyMsg('${myId}')">📋 复制</a>
+      </div>`;
+    const finalHtml = (window.marked) ? marked.parse(accumulated) : escapeHtml(accumulated);
+    bubble.innerHTML = finalHtml + refsHtml + actions;
+    // Refresh session list (new session may have been created)
+    if(document.getElementById('histDrawer').classList.contains('open')) refreshSessions();
   }catch(e){
-    document.getElementById('thinking')?.remove();
-    appendMsg('assistant', '⚠️ '+e.message);
+    bubble.innerHTML = '<span style="color:#dc2626">⚠️ '+escapeHtml(e.message)+'</span>';
   }finally{
-    inp.disabled=false; inp.focus();
+    inp.disabled=false; sendBtn.disabled=false; inp.focus();
   }
+}
+
+/* ============ Session history ============ */
+function toggleHistory(){
+  const d = document.getElementById('histDrawer');
+  d.classList.toggle('open');
+  if(d.classList.contains('open')) refreshSessions();
+}
+
+async function refreshSessions(){
+  if(!currentProject) return;
+  try{
+    const list = await api('/api/chat/sessions/'+currentProject.id);
+    const el = document.getElementById('histList');
+    if(!list.length){
+      el.innerHTML = '<div class="muted" style="padding:20px;text-align:center;font-size:12px">还没有历史对话</div>';
+      return;
+    }
+    el.innerHTML = list.map(s=>`
+      <div class="hist-row ${currentSession===s.id?'current':''}" onclick="loadSession(${s.id})">
+        <div class="title">${escapeHtml(s.title)}</div>
+        <div class="meta">
+          <span>${s.message_count} 条消息</span>
+          <span>${new Date(s.created_at).toLocaleString()}</span>
+        </div>
+        <div class="acts">
+          <a onclick="event.stopPropagation();renameSession(${s.id},'${escapeHtml(s.title).replace(/'/g,"\\'")}')">✏️ 改名</a>
+          <a class="danger" onclick="event.stopPropagation();delSession(${s.id})">🗑 删除</a>
+        </div>
+      </div>
+    `).join('');
+  }catch(e){ document.getElementById('histList').innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+
+async function loadSession(sid){
+  currentSession = sid;
+  document.getElementById('curSessionTitle').textContent = '· 加载中…';
+  try{
+    const msgs = await api('/api/chat/session/'+sid+'/messages');
+    const wrap = document.getElementById('chatMsgs');
+    wrap.innerHTML = '';
+    msgSeq = 0;
+    for(const m of msgs){
+      // parse out "[📎参考: ...]" if present in user msg
+      let content = m.content || '';
+      let refs = null;
+      const refMatch = content.match(/\s*\[📎参考:\s*([^\]]+)\]\s*$/);
+      if(refMatch){ refs = refMatch[1].split(/,\s*/); content = content.substring(0, refMatch.index); }
+      appendMsg(m.role, content, refs);
+    }
+    // re-fetch session title
+    const sessions = await api('/api/chat/sessions/'+currentProject.id);
+    const cur = sessions.find(s=>s.id===sid);
+    document.getElementById('curSessionTitle').textContent = cur ? '· '+cur.title : '';
+    refreshSessions();
+  }catch(e){ alert(e.message); }
+}
+
+function newSession(){
+  currentSession = null;
+  document.getElementById('curSessionTitle').textContent = '';
+  renderWelcome();
+}
+
+async function renameSession(sid, currentTitle){
+  const newTitle = prompt('新标题', currentTitle);
+  if(!newTitle || newTitle === currentTitle) return;
+  try{
+    await api('/api/chat/session/'+sid, {method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title:newTitle})});
+    refreshSessions();
+  }catch(e){ alert(e.message); }
+}
+
+async function delSession(sid){
+  if(!confirm('确认删除该对话？所有消息将一并删除')) return;
+  try{
+    await api('/api/chat/session/'+sid, {method:'DELETE'});
+    if(currentSession===sid){ newSession(); }
+    refreshSessions();
+  }catch(e){ alert(e.message); }
 }
 
 /* ============ Users (admin) ============ */

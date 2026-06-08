@@ -93,20 +93,34 @@ def send(body: ChatIn, user: User = Depends(get_current_user),
     session.commit()
 
     if body.stream:
+        from ..db import engine as _engine
+        session_id = cs.id
+        user_id = user.id
         def gen():
             collected = []
             try:
+                # First frame: session id so frontend can track
+                yield f"​__SID__{session_id}​"
                 for delta in chat_stream(messages, system=SYSTEM_PROMPT):
                     collected.append(delta)
                     yield delta
+            except Exception as e:
+                err = f"\n\n⚠️ 流式中断: {type(e).__name__}: {e}"
+                collected.append(err)
+                yield err
             finally:
                 full = "".join(collected)
-                with Session(session.bind) as s2:
-                    s2.add(ChatMessage(session_id=cs.id, role="assistant", content=full))
-                    s2.add(AuditLog(user_id=user.id, action="chat.stream",
-                                    payload=f"session={cs.id}"))
+                # strip first frame marker before saving
+                if full.startswith("​__SID__"):
+                    nl = full.find("​", 8)
+                    if nl > 0: full = full[nl+1:]
+                with Session(_engine) as s2:
+                    s2.add(ChatMessage(session_id=session_id, role="assistant", content=full))
+                    s2.add(AuditLog(user_id=user_id, action="chat.stream",
+                                    payload=f"session={session_id}"))
                     s2.commit()
-        return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
+        return StreamingResponse(gen(), media_type="text/plain; charset=utf-8",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     try:
         reply = llm_chat(messages, system=SYSTEM_PROMPT)
@@ -127,7 +141,17 @@ def list_sessions(project_id: int, user: User = Depends(get_current_user),
                                   ChatSession.project_id == project_id)
         .order_by(ChatSession.id.desc())
     ).all()
-    return rows
+    # Add message count per session
+    out = []
+    for r in rows:
+        cnt = session.exec(
+            select(ChatMessage).where(ChatMessage.session_id == r.id)
+        ).all()
+        out.append({
+            "id": r.id, "title": r.title, "created_at": r.created_at.isoformat(),
+            "message_count": len(cnt),
+        })
+    return out
 
 
 @router.get("/session/{session_id}/messages")
@@ -139,3 +163,36 @@ def list_messages(session_id: int, user: User = Depends(get_current_user),
     return session.exec(
         select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.id)
     ).all()
+
+
+from pydantic import BaseModel
+class SessionUpdate(BaseModel):
+    title: str
+
+@router.patch("/session/{session_id}")
+def rename_session(session_id: int, body: SessionUpdate,
+                   user: User = Depends(get_current_user),
+                   session: Session = Depends(get_session)):
+    cs = session.get(ChatSession, session_id)
+    if not cs or cs.user_id != user.id:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    cs.title = body.title.strip()[:128] or "未命名"
+    session.add(cs); session.commit()
+    return {"ok": True, "title": cs.title}
+
+
+@router.delete("/session/{session_id}")
+def delete_session(session_id: int,
+                   user: User = Depends(get_current_user),
+                   session: Session = Depends(get_session)):
+    cs = session.get(ChatSession, session_id)
+    if not cs or cs.user_id != user.id:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    # Delete messages then session
+    msgs = session.exec(select(ChatMessage).where(ChatMessage.session_id == session_id)).all()
+    for m in msgs: session.delete(m)
+    session.delete(cs)
+    session.add(AuditLog(user_id=user.id, action="chat.delete_session",
+                         payload=f"session={session_id}"))
+    session.commit()
+    return {"ok": True}
