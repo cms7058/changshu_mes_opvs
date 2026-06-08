@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><title>MES 运维智能体</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 :root{--blue:#2563eb;--blue-soft:#dbeafe;--ink:#1f2937;--muted:#6b7280;--bg:#f5f7fa;--line:#dde3ec;--green:#16a34a;--amber:#d97706;--red:#dc2626}
 *{box-sizing:border-box}
@@ -76,9 +77,28 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 .msg{margin-bottom:14px;display:flex;gap:10px;max-width:100%}
 .msg .av{width:30px;height:30px;border-radius:50%;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
 .msg.user .av{background:#fef3c7;color:#92400e}
-.msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-width:80%;white-space:pre-wrap;line-height:1.7}
-.msg.user .bubble{background:#fef9e7}
-.msg .refs{font-size:11px;color:var(--blue);margin-top:4px}
+.msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;max-width:80%;line-height:1.7;overflow-x:auto}
+.msg.user .bubble{background:#fef9e7;white-space:pre-wrap}
+.msg.assistant .bubble{font-size:13.5px}
+/* Markdown rendering inside chat bubble */
+.msg.assistant .bubble h1{font-size:18px;margin:14px 0 8px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+.msg.assistant .bubble h2{font-size:15px;margin:12px 0 6px;color:#1e40af}
+.msg.assistant .bubble h3{font-size:14px;margin:10px 0 4px;color:#334155}
+.msg.assistant .bubble p{margin:6px 0}
+.msg.assistant .bubble ul,.msg.assistant .bubble ol{margin:6px 0;padding-left:24px}
+.msg.assistant .bubble li{margin:2px 0}
+.msg.assistant .bubble strong{color:#1e40af}
+.msg.assistant .bubble code{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:12px;font-family:'SF Mono',Consolas,monospace}
+.msg.assistant .bubble pre{background:#1e293b;color:#e2e8f0;padding:10px 14px;border-radius:6px;overflow-x:auto;font-size:12px;margin:8px 0}
+.msg.assistant .bubble pre code{background:transparent;color:inherit;padding:0}
+.msg.assistant .bubble blockquote{border-left:3px solid #cbd5e1;padding:4px 12px;color:#475569;margin:8px 0;background:#f8fafc}
+.msg.assistant .bubble table{border-collapse:collapse;font-size:12px;margin:8px 0;width:100%}
+.msg.assistant .bubble th,.msg.assistant .bubble td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}
+.msg.assistant .bubble th{background:#f1f5f9;font-weight:600}
+.msg .refs{font-size:11px;color:var(--blue);margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb}
+.msg-actions{margin-top:8px;padding-top:6px;border-top:1px dashed #e5e7eb;display:flex;gap:10px;font-size:11px}
+.msg-actions a{color:var(--blue);cursor:pointer}
+.msg-actions a:hover{text-decoration:underline}
 .chat-input-wrap{padding:14px 24px;background:#fff;border-top:1px solid var(--line);flex-shrink:0}
 .chat-input{display:flex;gap:10px}
 .chat-input textarea{flex:1;min-height:44px;max-height:200px}
@@ -403,17 +423,104 @@ async function delDoc(id){
 }
 
 /* ============ Chat ============ */
+// Configure marked.js once
+if(window.marked){
+  marked.setOptions({gfm:true, breaks:true, headerIds:false, mangle:false});
+}
+
+let msgSeq = 0;
 function appendMsg(role, content, refs){
   const wrap = document.getElementById('chatMsgs');
-  // remove welcome if exists
   const w = wrap.querySelector('.welcome'); if(w) w.remove();
   const cls = role==='user'?'user':'assistant';
   const av = role==='user'?'我':'AI';
-  const refsHtml = refs && refs.length ? `<div class="refs">📎 参考 ${refs.length} 份：${refs.join(', ')}</div>` : '';
-  wrap.insertAdjacentHTML('beforeend', `<div class="msg ${cls}"><div class="av">${av}</div><div class="bubble">${escapeHtml(content)}${refsHtml}</div></div>`);
+  const refsHtml = refs && refs.length ? `<div class="refs">📎 参考 ${refs.length} 份：${escapeHtml(refs.join(', '))}</div>` : '';
+  const myId = 'm'+(++msgSeq);
+  // For assistant: render markdown; for user: keep as plain
+  let body;
+  if(role==='assistant' && window.marked){
+    try{ body = marked.parse(content||''); }
+    catch(_){ body = '<p>'+escapeHtml(content)+'</p>'; }
+  } else {
+    body = escapeHtml(content);
+  }
+  // Action bar only for assistant
+  const actions = role==='assistant' ? `
+    <div class="msg-actions">
+      <a onclick="openMsgPage('${myId}')">📄 新窗口查看</a>
+      <a onclick="downloadMd('${myId}')">📥 下载 .md</a>
+      <a onclick="copyMsg('${myId}')">📋 复制</a>
+    </div>` : '';
+  wrap.insertAdjacentHTML('beforeend',
+    `<div class="msg ${cls}" id="${myId}" data-raw="${encodeURIComponent(content||'')}">
+       <div class="av">${av}</div>
+       <div class="bubble">${body}${refsHtml}${actions}</div>
+     </div>`);
   wrap.scrollTop = wrap.scrollHeight;
 }
-function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function getRawContent(msgId){
+  return decodeURIComponent(document.getElementById(msgId).dataset.raw||'');
+}
+function copyMsg(msgId){
+  navigator.clipboard.writeText(getRawContent(msgId)).then(
+    ()=>alert('✅ 已复制到剪贴板'),
+    ()=>alert('复制失败')
+  );
+}
+function downloadMd(msgId){
+  const content = getRawContent(msgId);
+  const ts = new Date().toISOString().substring(0,16).replace(/[T:]/g,'-');
+  const blob = new Blob([content], {type:'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `AI方案_${currentProject?currentProject.name:'doc'}_${ts}.md`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function openMsgPage(msgId){
+  const content = getRawContent(msgId);
+  const projName = currentProject?currentProject.name:'';
+  const ts = new Date().toLocaleString();
+  const body = window.marked ? marked.parse(content) : '<pre>'+escapeHtml(content)+'</pre>';
+  const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>AI 方案 · ${escapeHtml(projName)}</title>
+<style>
+body{margin:0;font:15px/1.8 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#1f2937}
+.head{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:24px 40px}
+.head h1{margin:0;font-size:22px}
+.head small{opacity:.85;font-size:12px}
+.wrap{max-width:900px;margin:0 auto;background:#fff;padding:36px 48px;box-shadow:0 0 20px rgba(0,0,0,.05);min-height:calc(100vh - 80px)}
+h1{font-size:24px;margin:18px 0 12px;border-bottom:1px solid #e5e7eb;padding-bottom:6px}
+h2{font-size:19px;margin:20px 0 10px;color:#1e40af}
+h3{font-size:16px;margin:14px 0 8px;color:#334155}
+p{margin:8px 0}
+ul,ol{margin:8px 0;padding-left:28px}
+li{margin:4px 0}
+strong{color:#1e40af}
+code{background:#f1f5f9;padding:2px 6px;border-radius:3px;font-size:13px;font-family:'SF Mono',Consolas,monospace}
+pre{background:#1e293b;color:#e2e8f0;padding:14px 18px;border-radius:8px;overflow-x:auto;font-size:13px}
+pre code{background:transparent;color:inherit;padding:0}
+blockquote{border-left:4px solid #2563eb;padding:8px 16px;color:#475569;margin:12px 0;background:#f8fafc}
+table{border-collapse:collapse;margin:12px 0;width:100%;font-size:13px}
+th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left}
+th{background:#dbeafe;color:#1e40af;font-weight:600}
+.toolbar{position:fixed;top:16px;right:20px;display:flex;gap:6px}
+.btn{background:#fff;border:1px solid #dde3ec;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;color:#1f2937;text-decoration:none}
+.btn:hover{border-color:#2563eb;color:#2563eb}
+@media print{.toolbar{display:none}.head{background:none;color:#000;padding:20px 0}.wrap{box-shadow:none;padding:0;max-width:none}}
+</style></head><body>
+<div class="head"><h1>AI 方案 · ${escapeHtml(projName)}</h1><small>生成时间：${ts}</small></div>
+<div class="toolbar"><button class="btn" onclick="window.print()">🖨 打印/导出 PDF</button></div>
+<div class="wrap">${body}</div>
+</body></html>`;
+  const win = window.open('', '_blank');
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
 
 async function sendMsg(){
   const inp = document.getElementById('chatInput');
