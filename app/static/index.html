@@ -356,7 +356,8 @@ function renderWorkspace(){
         <div class="pane-content" id="paneIssues" style="display:none">
           <div class="issues-toolbar">
             <div class="issues-stats" id="issuesStats">—</div>
-            <button class="btn btn-sm" onclick="extractFromSelected()" id="extractBtn">🔍 从勾选文档抽取</button>
+            <button class="btn btn-sm" onclick="extractFromSelected()" id="extractBtn">🔍 抽取勾选</button>
+            <button class="btn btn-sm" onclick="extractAllDocs()" id="extractAllBtn" style="background:#7c3aed">⚡ 抽取全部已解析</button>
             <button class="btn btn-sec btn-sm" onclick="refreshIssues()">🔄 刷新</button>
           </div>
           <div class="issues-body" id="issuesBody">加载中…</div>
@@ -610,19 +611,160 @@ async function renderMermaidIn(root){
     wrap.dataset.code = encodeURIComponent(code);
     wrap.innerHTML = `<div class="mermaid-svg" id="${id}"></div>
       <div class="mermaid-actions">
-        <a onclick="summarizeChart(this)">📊 AI 总结这张图</a>
+        <a onclick="summarizeChart(this)">📊 AI 总结</a>
+        <a onclick="askEditFreeform(this)">✏️ 让 AI 修改</a>
         <a onclick="exportChartPng(this,'${id}')">💾 导出 PNG</a>
         <a onclick="viewChartFull(this)">🔍 大图查看</a>
-        <a onclick="copyMermaidCode(this)">📋 复制 Mermaid 代码</a>
+        <a onclick="copyMermaidCode(this)">📋 复制代码</a>
       </div>`;
     pre.replaceWith(wrap);
     try{
       const { svg } = await mermaid.render(id + '-svg', code);
       document.getElementById(id).innerHTML = svg;
+      // Make nodes clickable
+      attachNodeClickHandlers(document.getElementById(id), wrap);
     }catch(err){
       document.getElementById(id).innerHTML = `<div class="mermaid-error">⚠️ Mermaid 渲染失败：${escapeHtml(err.message||err)}\n\n代码:\n<code>${escapeHtml(code.substring(0,400))}</code></div>`;
     }
   }
+}
+
+function attachNodeClickHandlers(svgWrap, mermaidWrap){
+  // Mermaid renders nodes as <g class="node ...">
+  const nodes = svgWrap.querySelectorAll('g.node, g.actor');
+  nodes.forEach(n=>{
+    n.style.cursor = 'pointer';
+    n.addEventListener('mouseenter', ()=>{
+      n.querySelectorAll('rect,polygon,circle,ellipse,path').forEach(s=>{
+        s.style.filter = 'brightness(1.05) drop-shadow(0 0 4px rgba(37,99,235,.6))';
+      });
+    });
+    n.addEventListener('mouseleave', ()=>{
+      n.querySelectorAll('rect,polygon,circle,ellipse,path').forEach(s=>{
+        s.style.filter = '';
+      });
+    });
+    n.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const label = n.querySelector('text')?.textContent || n.textContent.trim().substring(0,40) || '(未知节点)';
+      openNodeEditor(mermaidWrap, label);
+    });
+  });
+}
+
+function openNodeEditor(mermaidWrap, nodeLabel){
+  const code = decodeURIComponent(mermaidWrap.dataset.code || '');
+  mermaidWrap.dataset.editTarget = nodeLabel;
+  openModal(`✏️ 编辑节点：${nodeLabel}`, `
+    <p class="muted" style="font-size:12px">在下方告诉 AI 你想怎么改这个节点（或它周围的结构）。AI 会读取整张图 + 项目已知问题，给出建议并预览 diff。</p>
+    <div class="field"><label>修改要求</label>
+      <textarea id="nodeEditInstr" rows="4" placeholder="例：
+- 把这个节点拆成"末道报工"和"分段报工"两个子节点
+- 在这个节点后面增加一个 IQC 复检步骤
+- 将严重度提升到高，并连接到 D1 节点"></textarea>
+    </div>
+    <div id="nodeEditPrompts" class="prompt-chips" style="margin-bottom:10px"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="askAIEdit(this)" data-code="${encodeURIComponent(code)}" data-target="${encodeURIComponent(nodeLabel)}">🤖 让 AI 提议</button>
+    </div>
+    <div id="diffResult"></div>
+  `, true);
+  // Quick prompt chips
+  const promptsEl = document.getElementById('nodeEditPrompts');
+  const presets = [
+    '在此节点后增加一个 IQC 质检步骤',
+    '把此节点拆成 2 个并行子节点',
+    '提升此节点为高严重度（红色）',
+    '删除此节点并重新连接前后节点',
+    '为此节点加一个失败异常分支',
+  ];
+  promptsEl.innerHTML = presets.map(p=>`<span class="chip" onclick="document.getElementById('nodeEditInstr').value='${p}';document.getElementById('nodeEditInstr').focus()">${p}</span>`).join('');
+}
+
+function askEditFreeform(actionEl){
+  const wrap = actionEl.closest('.mermaid-wrap');
+  openNodeEditor(wrap, '(整张图)');
+}
+
+async function askAIEdit(btn){
+  const code = decodeURIComponent(btn.dataset.code);
+  const target = decodeURIComponent(btn.dataset.target);
+  const instr = document.getElementById('nodeEditInstr').value.trim();
+  if(!instr){ alert('请填写修改要求'); return; }
+  btn.disabled = true; btn.textContent = '🤖 AI 思考中…';
+  const diffEl = document.getElementById('diffResult');
+  diffEl.innerHTML = '<p class="muted" style="margin-top:14px">⏳ AI 正在分析当前图 + 项目已知问题，预计 20~60 秒…</p>';
+  try{
+    const j = await api('/api/diagrams/edit', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_id: currentProject.id, mermaid_code: code,
+                            target_node: target==='(整张图)'?null:target,
+                            instruction: instr})});
+    // Render diff
+    await renderDiffPreview(diffEl, code, j.new_mermaid, j.reasoning);
+  }catch(e){ diffEl.innerHTML = '<div class="error" style="margin-top:14px">'+e.message+'</div>'; }
+  finally{ btn.disabled = false; btn.textContent = '🤖 让 AI 提议'; }
+}
+
+async function renderDiffPreview(container, oldCode, newCode, reasoning){
+  container.innerHTML = `
+    <h4 style="margin:18px 0 8px;font-size:13px;color:#1e40af;border-bottom:1px solid #e5e7eb;padding-bottom:4px">📋 AI 提议预览</h4>
+    <div style="background:#fffbeb;border:1px solid #d97706;border-radius:6px;padding:10px 14px;margin:8px 0;font-size:13px">
+      <b>说明：</b><br>${marked ? marked.parse(reasoning||'(无)') : escapeHtml(reasoning||'(无)')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div>
+        <div style="font-size:11px;color:#6b7280;margin-bottom:4px">⬜ 原图</div>
+        <div id="diffOld" style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:10px;min-height:200px;text-align:center"></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#16a34a;margin-bottom:4px">🟢 AI 建议</div>
+        <div id="diffNew" style="background:#f0fdf4;border:1px solid #16a34a;border-radius:6px;padding:10px;min-height:200px;text-align:center"></div>
+      </div>
+    </div>
+    <details style="margin-top:10px"><summary class="muted" style="font-size:11px;cursor:pointer">查看新代码</summary>
+      <pre style="background:#1e293b;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;max-height:200px;margin-top:6px">${escapeHtml(newCode)}</pre>
+    </details>
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px">
+      <button class="btn btn-sec" onclick="document.getElementById('diffResult').innerHTML='';document.getElementById('nodeEditInstr').focus()">↩️ 继续追问</button>
+      <button class="btn" style="background:#16a34a" onclick="applyDiff('${encodeURIComponent(newCode)}')">✅ 应用此版本</button>
+    </div>`;
+  // Render both diagrams
+  try{
+    const oldR = await mermaid.render('diff-old-svg', oldCode);
+    document.getElementById('diffOld').innerHTML = oldR.svg;
+  }catch(e){ document.getElementById('diffOld').textContent = '原图渲染失败'; }
+  try{
+    const newR = await mermaid.render('diff-new-svg', newCode);
+    document.getElementById('diffNew').innerHTML = newR.svg;
+  }catch(e){ document.getElementById('diffNew').innerHTML = '<div class="error">新图渲染失败：'+escapeHtml(e.message)+'</div>'; }
+}
+
+function applyDiff(encNewCode){
+  const newCode = decodeURIComponent(encNewCode);
+  // Find the mermaid-wrap that was being edited
+  const wraps = document.querySelectorAll('.mermaid-wrap[data-edit-target]');
+  if(!wraps.length){ alert('找不到原图位置'); return; }
+  const wrap = wraps[wraps.length-1];
+  delete wrap.dataset.editTarget;
+  // Replace with new code + re-render
+  wrap.dataset.code = encodeURIComponent(newCode);
+  const svgWrap = wrap.querySelector('.mermaid-svg');
+  const newId = 'mmd-' + (++mermaidSeq) + '-svg';
+  mermaid.render(newId, newCode).then(({svg})=>{
+    svgWrap.innerHTML = svg;
+    attachNodeClickHandlers(svgWrap, wrap);
+  }).catch(e=>{
+    svgWrap.innerHTML = '<div class="mermaid-error">新图渲染失败：'+escapeHtml(e.message)+'</div>';
+  });
+  closeModal();
+  // Toast
+  const t = document.createElement('div');
+  t.style.cssText='position:fixed;top:20px;right:20px;background:#16a34a;color:#fff;padding:10px 16px;border-radius:8px;z-index:100;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.15)';
+  t.textContent = '✅ 已应用 AI 的新版本';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3000);
 }
 
 function getMermaidCode(actionEl){
@@ -1148,6 +1290,42 @@ function extractFromSelected(){
       <button class="btn" onclick="confirmExtract()">▶ 开始抽取</button>
     </div>
   `);
+}
+
+async function extractAllDocs(){
+  // Get all done docs in project
+  try{
+    const docs = await api('/api/documents/by_project/'+currentProject.id);
+    const doneDocs = docs.filter(d=>d.parse_status==='done');
+    if(!doneDocs.length){ alert('没有已解析完成的文档'); return; }
+    const n = doneDocs.length;
+    openModal('⚡ 抽取全部已解析文档', `
+      <p>将对 <b style="color:#7c3aed">${n}</b> 份已解析完成的文档逐一调用 AI 抽取问题。</p>
+      <p class="muted" style="font-size:12px">预计耗时 <b>${Math.round(n*30/60)}~${Math.round(n*60/60)}</b> 分钟，可关闭浏览器，结果会在后台继续生成。</p>
+      <p class="muted" style="font-size:12px">⚠️ 现有 AI 草案问题会保留。</p>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-sec" onclick="closeModal()">取消</button>
+        <button class="btn" style="background:#7c3aed" onclick="confirmExtractAll(${JSON.stringify(doneDocs.map(d=>d.id))})">▶ 开始抽取 ${n} 份</button>
+      </div>
+    `);
+  }catch(e){ alert(e.message); }
+}
+
+async function confirmExtractAll(docIds){
+  closeModal();
+  const btn = document.getElementById('extractAllBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 排队中…'; }
+  try{
+    const j = await api('/api/issues/extract', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_id: currentProject.id, doc_ids: docIds, replace_existing: false})});
+    if(btn) btn.textContent = `⏳ 处理 ${j.queued} 份…`;
+    const stats = document.getElementById('issuesStats');
+    if(stats){ stats.innerHTML = `⏳ 后台抽取 <b>${j.queued}</b> 份文档，预计 ${Math.round(j.queued*30/60)}~${Math.round(j.queued*60/60)} 分钟…`; }
+    setTimeout(()=>{ if(btn){ btn.disabled = false; btn.textContent = '⚡ 抽取全部已解析'; } }, j.queued*5000);
+  }catch(e){
+    alert(e.message); if(btn){ btn.disabled = false; btn.textContent = '⚡ 抽取全部已解析'; }
+  }
 }
 
 async function confirmExtract(){
