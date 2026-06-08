@@ -12,11 +12,17 @@ if [ ! -d "$APP_DIR/.git" ]; then
   exit 1
 fi
 
+# All git commands must run as the repo owner to avoid "dubious ownership"
+GIT="sudo -u $APP_USER git -C $APP_DIR"
+
+# Belt-and-suspenders: mark this dir as safe globally
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 echo "[update] Fetching latest from origin/$GIT_BRANCH …"
-OLD_HASH=$(git -C "$APP_DIR" rev-parse HEAD)
-sudo -u "$APP_USER" git -C "$APP_DIR" fetch --all
-sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$GIT_BRANCH"
-NEW_HASH=$(git -C "$APP_DIR" rev-parse HEAD)
+OLD_HASH=$($GIT rev-parse HEAD)
+$GIT fetch --all
+$GIT reset --hard "origin/$GIT_BRANCH"
+NEW_HASH=$($GIT rev-parse HEAD)
 
 if [ "$OLD_HASH" = "$NEW_HASH" ]; then
   echo "[update] Already at $NEW_HASH — no changes."
@@ -24,7 +30,7 @@ if [ "$OLD_HASH" = "$NEW_HASH" ]; then
 fi
 
 # Re-install deps if requirements.txt changed
-if git -C "$APP_DIR" diff --name-only "$OLD_HASH" "$NEW_HASH" | grep -q '^requirements.txt$'; then
+if $GIT diff --name-only "$OLD_HASH" "$NEW_HASH" | grep -q '^requirements.txt$'; then
   echo "[update] requirements.txt changed — re-installing deps"
   sudo -u "$APP_USER" bash -lc "
     cd $APP_DIR && source .venv/bin/activate && pip install -r requirements.txt
