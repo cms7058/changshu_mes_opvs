@@ -85,6 +85,37 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 
 .streaming-cursor::after{content:"▊";animation:blink 1s steps(2) infinite;color:var(--blue);font-weight:normal;margin-left:1px}
 @keyframes blink{50%{opacity:0}}
+
+/* Tabs in workspace */
+.tabs-bar{display:flex;gap:4px;padding:8px 14px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0}
+.tab-btn{padding:6px 14px;border-radius:6px 6px 0 0;background:transparent;border:none;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.tab-btn:hover{color:var(--blue)}
+.pane-content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* Issues view */
+.issues-toolbar{padding:12px 18px;background:#fff;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex-shrink:0}
+.issues-stats{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-right:auto}
+.issues-stats b{color:var(--ink);font-size:14px}
+.issues-body{flex:1;overflow-y:auto;padding:16px 18px}
+.cat-section{margin-bottom:18px}
+.cat-section h3{margin:0 0 8px;font-size:14px;color:#1e40af;border-left:3px solid var(--blue);padding-left:8px}
+.issue-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.issue-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;cursor:pointer;transition:all .15s;position:relative}
+.issue-card:hover{border-color:var(--blue);box-shadow:0 2px 8px rgba(37,99,235,.08)}
+.issue-card .code{font-size:11px;font-weight:700;color:var(--blue);letter-spacing:.5px}
+.issue-card .title{font-weight:600;margin:4px 0;font-size:13.5px;line-height:1.4}
+.issue-card .desc{font-size:12px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.issue-card .badges{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.severity-high{background:#fee2e2;color:#991b1b}
+.severity-mid{background:#fef3c7;color:#92400e}
+.severity-low{background:#dcfce7;color:#166534}
+.status-ai_draft{background:#e9d5ff;color:#6b21a8}
+.status-open{background:#dbeafe;color:#1e40af}
+.status-approved{background:#dcfce7;color:#166534}
+.status-closed{background:#e2e8f0;color:#475569}
+.empty-issues{padding:60px 20px;text-align:center;color:var(--muted)}
+.empty-issues h3{margin:0 0 8px;color:#374151}
 .chat-msgs{flex:1;overflow-y:auto;padding:16px 24px}
 .welcome{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px 28px;max-width:760px;margin:20px auto}
 .welcome h3{margin:0 0 8px;font-size:16px}
@@ -273,34 +304,51 @@ function renderWorkspace(){
         </div>
       </div>
 
-      <!-- Right: chat -->
+      <!-- Right: chat + issues (tabs) -->
       <div class="chat-pane" style="position:relative">
-        <div class="chat-head">
-          <h2>
-            <span>💬 AI 诊断与方案 <span id="curSessionTitle" class="muted" style="font-weight:normal;font-size:12px;margin-left:8px"></span></span>
-            <div class="actions">
-              <button class="btn btn-sec btn-sm" onclick="newSession()">+ 新对话</button>
-              <button class="btn btn-sec btn-sm" onclick="toggleHistory()">📋 历史</button>
-              <a onclick="viewProjects()" style="font-size:12px;color:#6b7280;cursor:pointer;padding:5px 0">← 返回</a>
-            </div>
-          </h2>
+        <div class="tabs-bar">
+          <button class="tab-btn active" id="tabChat" onclick="switchTab('chat')">💬 AI 诊断与方案</button>
+          <button class="tab-btn" id="tabIssues" onclick="switchTab('issues')">🎯 问题清单 <span id="issuesCount" class="muted" style="font-size:11px"></span></button>
+          <a onclick="viewProjects()" style="margin-left:auto;font-size:12px;color:#6b7280;cursor:pointer;padding:6px">← 返回项目列表</a>
         </div>
-        <div class="chat-msgs" id="chatMsgs"></div>
-        <div class="chat-input-wrap">
-          <div id="contextHint" class="muted" style="font-size:11px;margin-bottom:6px"></div>
-          <div class="chat-input">
-            <textarea id="chatInput" placeholder="输入你的问题…（Ctrl/Cmd + Enter 发送）" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')sendMsg()"></textarea>
-            <button class="btn" onclick="sendMsg()" id="sendBtn">发送</button>
+
+        <!-- Chat view -->
+        <div class="pane-content" id="paneChat">
+          <div class="chat-head">
+            <h2>
+              <span><span id="curSessionTitle" class="muted" style="font-weight:normal;font-size:12px;margin-left:8px">新对话</span></span>
+              <div class="actions">
+                <button class="btn btn-sec btn-sm" onclick="newSession()">+ 新对话</button>
+                <button class="btn btn-sec btn-sm" onclick="toggleHistory()">📋 历史</button>
+              </div>
+            </h2>
+          </div>
+          <div class="chat-msgs" id="chatMsgs"></div>
+          <div class="chat-input-wrap">
+            <div id="contextHint" class="muted" style="font-size:11px;margin-bottom:6px"></div>
+            <div class="chat-input">
+              <textarea id="chatInput" placeholder="输入你的问题…（Ctrl/Cmd + Enter 发送）" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')sendMsg()"></textarea>
+              <button class="btn" onclick="sendMsg()" id="sendBtn">发送</button>
+            </div>
+          </div>
+          <!-- History drawer -->
+          <div class="hist-drawer" id="histDrawer">
+            <div class="hist-head">
+              <b>📋 历史对话</b>
+              <a onclick="toggleHistory()" style="cursor:pointer;color:#6b7280">×</a>
+            </div>
+            <div class="hist-list" id="histList">加载中…</div>
           </div>
         </div>
 
-        <!-- History drawer -->
-        <div class="hist-drawer" id="histDrawer">
-          <div class="hist-head">
-            <b>📋 历史对话</b>
-            <a onclick="toggleHistory()" style="cursor:pointer;color:#6b7280">×</a>
+        <!-- Issues view -->
+        <div class="pane-content" id="paneIssues" style="display:none">
+          <div class="issues-toolbar">
+            <div class="issues-stats" id="issuesStats">—</div>
+            <button class="btn btn-sm" onclick="extractFromSelected()" id="extractBtn">🔍 从勾选文档抽取</button>
+            <button class="btn btn-sec btn-sm" onclick="refreshIssues()">🔄 刷新</button>
           </div>
-          <div class="hist-list" id="histList">加载中…</div>
+          <div class="issues-body" id="issuesBody">加载中…</div>
         </div>
       </div>
     </div>`;
@@ -714,6 +762,170 @@ async function delSession(sid){
     if(currentSession===sid){ newSession(); }
     refreshSessions();
   }catch(e){ alert(e.message); }
+}
+
+/* ============ Tab switching + Issues view ============ */
+let currentTab = 'chat';
+let issuesPollInterval = null;
+
+function switchTab(t){
+  currentTab = t;
+  document.getElementById('tabChat').classList.toggle('active', t==='chat');
+  document.getElementById('tabIssues').classList.toggle('active', t==='issues');
+  document.getElementById('paneChat').style.display = t==='chat' ? 'flex' : 'none';
+  document.getElementById('paneIssues').style.display = t==='issues' ? 'flex' : 'none';
+  if(t==='issues'){
+    refreshIssues();
+    // poll while extraction may be running
+    if(issuesPollInterval) clearInterval(issuesPollInterval);
+    issuesPollInterval = setInterval(()=>{
+      if(currentTab==='issues') refreshIssues(true);
+    }, 5000);
+  } else {
+    if(issuesPollInterval){ clearInterval(issuesPollInterval); issuesPollInterval = null; }
+  }
+}
+
+async function refreshIssues(silent){
+  if(!currentProject) return;
+  try{
+    const list = await api('/api/issues/by_project/'+currentProject.id);
+    document.getElementById('issuesCount').textContent = list.length ? `(${list.length})` : '';
+    // Stats
+    const sevCount = {high:0, mid:0, low:0};
+    const statCount = {ai_draft:0, open:0, approved:0, closed:0};
+    list.forEach(i=>{
+      sevCount[i.severity] = (sevCount[i.severity]||0) + 1;
+      statCount[i.status] = (statCount[i.status]||0) + 1;
+    });
+    document.getElementById('issuesStats').innerHTML = `
+      共 <b>${list.length}</b> 项 ·
+      🔴 高 <b>${sevCount.high||0}</b> ·
+      🟡 中 <b>${sevCount.mid||0}</b> ·
+      🟢 低 <b>${sevCount.low||0}</b> ·
+      <span class="badge status-ai_draft">AI草案 ${statCount.ai_draft||0}</span>
+      <span class="badge status-approved">已批准 ${statCount.approved||0}</span>`;
+
+    // Group by category
+    const grouped = {};
+    list.forEach(i=>{
+      const cat = i.category || '其他';
+      (grouped[cat] = grouped[cat] || []).push(i);
+    });
+
+    const body = document.getElementById('issuesBody');
+    if(!list.length){
+      body.innerHTML = `<div class="empty-issues">
+        <h3>暂无问题</h3>
+        <p>在左侧勾选已解析的文档，然后点上方 <b>🔍 从勾选文档抽取</b> 让 AI 自动识别问题。</p>
+      </div>`;
+      return;
+    }
+    const cats = Object.keys(grouped).sort();
+    body.innerHTML = cats.map(cat => `
+      <div class="cat-section">
+        <h3>${escapeHtml(cat)} <span class="muted" style="font-size:11px">${grouped[cat].length} 项</span></h3>
+        <div class="issue-grid">
+          ${grouped[cat].map(i=>`
+            <div class="issue-card" onclick="openIssue(${i.id})">
+              <div class="code">${i.code}</div>
+              <div class="title">${escapeHtml(i.title||'(无标题)')}</div>
+              <div class="desc">${escapeHtml((i.description||'').substring(0,120))}</div>
+              <div class="badges">
+                <span class="badge severity-${i.severity}">${i.severity==='high'?'高':i.severity==='mid'?'中':'低'}</span>
+                <span class="badge status-${i.status}">${({ai_draft:'AI草案',open:'待审',approved:'已批准',closed:'已关闭'}[i.status])||i.status}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+  }catch(e){ if(!silent) document.getElementById('issuesBody').innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+
+async function openIssue(id){
+  try{
+    const list = await api('/api/issues/by_project/'+currentProject.id);
+    const i = list.find(x=>x.id===id); if(!i){ alert('问题不存在'); return; }
+    const isAdmin = user.role==='admin';
+    openModal(`${i.code} · ${i.title}`, `
+      <div class="field"><label>类别</label><input id="ei_cat" value="${escapeHtml(i.category)}"></div>
+      <div class="field"><label>严重度</label>
+        <select id="ei_sev">
+          <option value="high" ${i.severity==='high'?'selected':''}>高</option>
+          <option value="mid" ${i.severity==='mid'?'selected':''}>中</option>
+          <option value="low" ${i.severity==='low'?'selected':''}>低</option>
+        </select>
+      </div>
+      <div class="field"><label>标题</label><input id="ei_title" value="${escapeHtml(i.title||'')}"></div>
+      <div class="field"><label>描述</label><textarea id="ei_desc" rows="4">${escapeHtml(i.description||'')}</textarea></div>
+      <div class="field"><label>解决思路</label><textarea id="ei_sol" rows="4">${escapeHtml(i.proposed_solution||'')}</textarea></div>
+      <div class="field"><label>需要客户提供</label><textarea id="ei_req" rows="3">${escapeHtml(i.required_inputs||'')}</textarea></div>
+      <div class="field"><label>状态</label>
+        <select id="ei_status">
+          <option value="ai_draft" ${i.status==='ai_draft'?'selected':''}>AI草案</option>
+          <option value="open" ${i.status==='open'?'selected':''}>待审</option>
+          <option value="approved" ${i.status==='approved'?'selected':''}>已批准</option>
+          <option value="closed" ${i.status==='closed'?'selected':''}>已关闭</option>
+        </select>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:12px">
+        <div>${isAdmin?`<button class="btn" onclick="approveIssue(${id})">✅ 一键批准</button>`:''}
+             <button class="btn btn-sec" onclick="delIssue(${id})" style="color:#dc2626">🗑 删除</button></div>
+        <div>
+          <button class="btn btn-sec" onclick="closeModal()">取消</button>
+          <button class="btn" onclick="saveIssue(${id})">保存修改</button>
+        </div>
+      </div>
+    `, true);
+  }catch(e){ alert(e.message); }
+}
+
+async function saveIssue(id){
+  const body = {
+    category: ei_cat.value, severity: ei_sev.value,
+    title: ei_title.value, description: ei_desc.value,
+    proposed_solution: ei_sol.value, required_inputs: ei_req.value,
+    status: ei_status.value
+  };
+  try{
+    await api('/api/issues/'+id, {method:'PATCH',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    closeModal(); refreshIssues();
+  }catch(e){ alert(e.message); }
+}
+
+async function approveIssue(id){
+  try{ await api('/api/issues/'+id+'/approve', {method:'POST'}); closeModal(); refreshIssues(); }
+  catch(e){ alert(e.message); }
+}
+
+async function delIssue(id){
+  if(!confirm('确认删除该问题？')) return;
+  try{ await api('/api/issues/'+id, {method:'DELETE'}); closeModal(); refreshIssues(); }
+  catch(e){ alert(e.message); }
+}
+
+async function extractFromSelected(){
+  if(selectedDocs.size === 0){
+    alert('请先在左侧勾选要分析的文档');
+    return;
+  }
+  if(!confirm(`将对 ${selectedDocs.size} 份文档逐一调用 AI 抽取问题，预计 ${selectedDocs.size*30}~${selectedDocs.size*60} 秒。\n现有 AI 草案问题会保留（如想替换请先手动删除）。\n开始？`)) return;
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true; btn.textContent = '⏳ 排队中…';
+  try{
+    const j = await api('/api/issues/extract', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_id: currentProject.id, doc_ids: Array.from(selectedDocs), replace_existing: false})});
+    btn.textContent = `⏳ 处理中 (${j.queued} 份)`;
+    setTimeout(()=>{
+      btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取';
+    }, 5000);
+    refreshIssues();
+  }catch(e){
+    alert(e.message); btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取';
+  }
 }
 
 /* ============ Users (admin) ============ */
