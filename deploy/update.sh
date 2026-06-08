@@ -20,7 +20,11 @@ git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 
 echo "[update] Fetching latest from origin/$GIT_BRANCH …"
 OLD_HASH=$($GIT rev-parse HEAD)
-$GIT fetch --all
+# Try shallow fetch first (much smaller, more reliable on flaky networks)
+if ! $GIT fetch --depth 1 origin "$GIT_BRANCH" 2>/dev/null; then
+  echo "[update] shallow fetch failed, falling back to full fetch"
+  $GIT fetch --all
+fi
 $GIT reset --hard "origin/$GIT_BRANCH"
 NEW_HASH=$($GIT rev-parse HEAD)
 
