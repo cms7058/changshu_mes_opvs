@@ -836,7 +836,19 @@ function viewChartFull(actionEl){
     <h1>📊 ${currentProject?escapeHtmlForWin(currentProject.name):''} · 图表</h1>
     <pre class="mermaid">${escapeHtmlForWin(code)}</pre>
   </div>
-  <script>mermaid.initialize({startOnLoad:true, theme:'default', flowchart:{useMaxWidth:true, htmlLabels:true}});<\/script>
+  <script>
+    function tryRun(retries){
+      if(!window.mermaid){
+        if(retries>0){ setTimeout(()=>tryRun(retries-1), 200); return; }
+        return;
+      }
+      try{
+        mermaid.initialize({startOnLoad:false, theme:'default', flowchart:{useMaxWidth:true, htmlLabels:true}});
+        mermaid.run({querySelector:'pre.mermaid'});
+      }catch(e){ console.error(e); }
+    }
+    tryRun(20);
+  <\/script>
   </body></html>`);
   win.document.close();
 }
@@ -936,22 +948,38 @@ th{background:#dbeafe;color:#1e40af;font-weight:600}
 <div class="toolbar"><button class="btn" onclick="window.print()">🖨 打印/导出 PDF</button></div>
 <div class="wrap" id="content">${body}</div>
 <script>
-  // Convert <pre><code class="language-mermaid"> to <pre class="mermaid">
-  document.querySelectorAll('pre > code.language-mermaid').forEach(c=>{
-    const pre = c.parentElement;
-    const newPre = document.createElement('pre');
-    newPre.className = 'mermaid';
-    newPre.textContent = c.textContent;
-    pre.replaceWith(newPre);
-  });
-  if(window.mermaid){
-    mermaid.initialize({startOnLoad:true, theme:'default',
-      flowchart:{useMaxWidth:true, htmlLabels:true, curve:'basis'},
-      sequence:{useMaxWidth:true, mirrorActors:false}});
+  function convertBlocks(){
+    document.querySelectorAll('pre > code.language-mermaid').forEach(c=>{
+      const pre = c.parentElement;
+      const newPre = document.createElement('pre');
+      newPre.className = 'mermaid';
+      newPre.textContent = c.textContent;
+      pre.replaceWith(newPre);
+    });
   }
+  function tryRenderMermaid(retries){
+    if(!window.mermaid){
+      if(retries > 0){ setTimeout(()=>tryRenderMermaid(retries-1), 200); return; }
+      console.error('Mermaid 加载失败');
+      document.querySelectorAll('pre.mermaid').forEach(el=>{
+        el.innerHTML = '<div style="color:#dc2626;padding:10px;font-size:13px">⚠️ Mermaid 库加载失败（请检查网络），下面是原始代码：</div><pre style="white-space:pre-wrap;font-size:12px;background:#f1f5f9;padding:10px;border-radius:4px">'+el.textContent+'</pre>';
+      });
+      return;
+    }
+    convertBlocks();
+    try{
+      mermaid.initialize({startOnLoad:false, theme:'default',
+        flowchart:{useMaxWidth:true, htmlLabels:true, curve:'basis'},
+        sequence:{useMaxWidth:true, mirrorActors:false}});
+      mermaid.run({querySelector:'pre.mermaid'});
+    }catch(e){ console.error('Mermaid 渲染异常', e); }
+  }
+  // Try immediately + retry a few times until mermaid loads
+  tryRenderMermaid(20);
 <\/script>
 </body></html>`;
   const win = window.open('', '_blank');
+  if(!win){ alert('浏览器阻止了弹窗，请允许后重试'); return; }
   win.document.open();
   win.document.write(html);
   win.document.close();
