@@ -1124,25 +1124,54 @@ async function delIssue(id){
   catch(e){ alert(e.message); }
 }
 
-async function extractFromSelected(){
+function extractFromSelected(){
   if(selectedDocs.size === 0){
     alert('请先在左侧勾选要分析的文档');
     return;
   }
-  if(!confirm(`将对 ${selectedDocs.size} 份文档逐一调用 AI 抽取问题，预计 ${selectedDocs.size*30}~${selectedDocs.size*60} 秒。\n现有 AI 草案问题会保留（如想替换请先手动删除）。\n开始？`)) return;
+  const n = selectedDocs.size;
+  // Get filenames
+  const docRows = document.querySelectorAll('.doc-row.selected .name span:last-child');
+  const names = Array.from(docRows).map(el=>el.textContent.trim()).slice(0,5);
+  const moreCount = n - names.length;
+  openModal('🔍 确认抽取问题', `
+    <p>将对 <b style="color:#2563eb">${n}</b> 份文档逐一调用 AI 抽取问题，预计耗时 <b>${n*30}~${n*60}</b> 秒。</p>
+    <div style="background:#f8fafc;border-radius:6px;padding:10px 14px;margin:10px 0;font-size:12px;max-height:120px;overflow-y:auto">
+      <b>勾选的文档：</b><br>
+      ${names.map(n=>'• '+escapeHtml(n)).join('<br>')}
+      ${moreCount>0?'<br>... 以及其他 '+moreCount+' 份':''}
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0">⚠️ 现有 AI 草案问题会保留。如需替换，请先手动删除。</p>
+    <p class="muted" style="font-size:12px">⚠️ 仅对"解析完成"的文档生效，未解析的会被跳过。</p>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmExtract()">▶ 开始抽取</button>
+    </div>
+  `);
+}
+
+async function confirmExtract(){
+  const docIds = Array.from(selectedDocs);
+  closeModal();
   const btn = document.getElementById('extractBtn');
-  btn.disabled = true; btn.textContent = '⏳ 排队中…';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 排队中…'; }
   try{
     const j = await api('/api/issues/extract', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({project_id: currentProject.id, doc_ids: Array.from(selectedDocs), replace_existing: false})});
-    btn.textContent = `⏳ 处理中 (${j.queued} 份)`;
+      body: JSON.stringify({project_id: currentProject.id, doc_ids: docIds, replace_existing: false})});
+    if(btn) btn.textContent = `⏳ 处理中 (${j.queued} 份)…`;
+    // Hint user
+    const stats = document.getElementById('issuesStats');
+    if(stats){
+      stats.innerHTML = `⏳ 后台正在处理 <b>${j.queued}</b> 份文档，预计 ${j.queued*30}~${j.queued*60} 秒。页面会自动刷新…`;
+    }
     setTimeout(()=>{
-      btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取';
-    }, 5000);
+      if(btn){ btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取'; }
+    }, j.queued*5000);
     refreshIssues();
   }catch(e){
-    alert(e.message); btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取';
+    alert(e.message);
+    if(btn){ btn.disabled = false; btn.textContent = '🔍 从勾选文档抽取'; }
   }
 }
 
