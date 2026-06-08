@@ -143,18 +143,31 @@ def _extract_one_doc(project_id: int, doc_id: int, user_id: int, replace: bool):
                 s.commit()
                 print(f"[extract] deleted {len(old)} old issues for doc {doc_id}", flush=True)
 
-            # Build prompt — cap at 60k chars
-            text = doc.extracted_text[:60000]
+            # Cap text — M2.7 is a reasoning model, long input → very long thinking
+            text = doc.extracted_text[:12000]
             user_msg = f"文档名：{doc.filename}\n\n文档内容：\n{text}\n\n请按要求提取问题，输出 JSON 数组。"
 
-            # Call LLM
-            print(f"[extract] doc {doc_id} calling LLM...", flush=True)
-            response = llm.chat(
+            # Call LLM via streaming so we get progress visibility
+            print(f"[extract] doc {doc_id} calling LLM (text={len(text)} chars)...", flush=True)
+            import time
+            t0 = time.time()
+            last_log = [t0]
+            def progress(text_so_far, _delta):
+                now = time.time()
+                if now - last_log[0] >= 5:
+                    print(f"[extract] doc {doc_id} streaming... {len(text_so_far)} chars, {int(now-t0)}s elapsed", flush=True)
+                    last_log[0] = now
+            response = llm.collect_stream(
                 [{"role": "user", "content": user_msg}],
                 system=EXTRACT_SYSTEM_PROMPT,
-                max_tokens=6000,
+                max_tokens=4000,
+                on_chunk=progress,
+                timeout=180.0,
             )
-            print(f"[extract] doc {doc_id} got {len(response)} chars", flush=True)
+            print(f"[extract] doc {doc_id} got {len(response)} chars in {int(time.time()-t0)}s", flush=True)
+            # Print first 200 chars of response for debugging
+            preview = response[:200].replace("\n", " ")
+            print(f"[extract] doc {doc_id} preview: {preview}", flush=True)
 
             issues = _extract_json_array(response)
             print(f"[extract] doc {doc_id} parsed {len(issues)} issues", flush=True)
