@@ -2,6 +2,7 @@
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><title>MES 运维智能体</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
 :root{--blue:#2563eb;--blue-soft:#dbeafe;--ink:#1f2937;--muted:#6b7280;--bg:#f5f7fa;--line:#dde3ec;--green:#16a34a;--amber:#d97706;--red:#dc2626}
 *{box-sizing:border-box}
@@ -116,6 +117,16 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 .status-closed{background:#e2e8f0;color:#475569}
 .empty-issues{padding:60px 20px;text-align:center;color:var(--muted)}
 .empty-issues h3{margin:0 0 8px;color:#374151}
+
+/* Mermaid diagram blocks */
+.mermaid-wrap{margin:10px 0;border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+.mermaid-svg{padding:14px;text-align:center;overflow-x:auto}
+.mermaid-svg svg{max-width:100%;height:auto}
+.mermaid-actions{padding:8px 14px;background:#f8fafc;border-top:1px solid var(--line);display:flex;gap:14px;font-size:11px}
+.mermaid-actions a{color:var(--blue);cursor:pointer}
+.mermaid-actions a:hover{text-decoration:underline}
+.mermaid-error{padding:12px 16px;background:#fef2f2;color:#991b1b;font-size:12px;font-family:monospace;white-space:pre-wrap;border-radius:6px;margin:8px 0}
+.mermaid-error code{background:#fee2e2;padding:1px 4px;border-radius:3px}
 .chat-msgs{flex:1;overflow-y:auto;padding:16px 24px}
 .welcome{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px 28px;max-width:760px;margin:20px auto}
 .welcome h3{margin:0 0 8px;font-size:16px}
@@ -378,6 +389,12 @@ function renderWelcome(){
       <span class="chip" onclick="useChip('为所选文档生成执行摘要（不超过 300 字），适合给项目经理汇报使用')">📝 执行摘要</span>
       <span class="chip" onclick="useChip('帮我把所选文档中描述的流程拆解为编号步骤，输出 markdown 格式，便于团队评审')">🗂 流程拆解</span>
     </div>
+    <p style="margin-top:14px"><b>📊 图表生成</b>（点击让 AI 输出 Mermaid 流程图，自动渲染）：</p>
+    <div class="prompt-chips">
+      <span class="chip" onclick="useChip('请基于所选文档生成一张【业务流程图】，输出 mermaid flowchart TD 格式（不要 LR 太宽）。要求：①识别主要业务节点（如收货/上架/领料/报工/入库/发货）；②对每个有问题的节点用 \\\\\\\\\\\\\\\":::problem\\\\\\\\\\\\\\\" 类标记，并在节点名后加上问题编号（如 C3）；③在 mermaid 代码前用 1~2 句话介绍流程概览；④代码用 ```mermaid 包裹。\\n\\n参考定义：\\nclassDef problem fill:#fee2e2,stroke:#dc2626')">📊 业务流程图</span>
+      <span class="chip" onclick="useChip('请基于所选文档中提到的问题，生成一张【问题分布图】，输出 mermaid flowchart LR 格式。要求：①按 A/B/C/D/E/F 六大类分组（用 subgraph）；②节点标题包含问题编号和简短标题（如 \\\\\\\\\\\\\\\"C3 集中报工\\\\\\\\\\\\\\\"）；③用 :::high / :::mid / :::low 类区分严重度；④代码用 ```mermaid 包裹。\\n\\n参考定义：\\nclassDef high fill:#fee2e2,stroke:#dc2626\\nclassDef mid fill:#fef3c7,stroke:#d97706\\nclassDef low fill:#dcfce7,stroke:#16a34a')">🎯 问题分布图</span>
+      <span class="chip" onclick="useChip('请基于所选文档生成一张【多角色协作泳道图】，输出 mermaid sequenceDiagram 格式。要求：①识别主要角色（如 客户/SAP/计划物流/WMS/MES/IQC/车间/LDS）；②按时间顺序展示一个核心业务流程（如采购收货全流程）；③在关键消息上注明数据/单据名；④代码用 ```mermaid 包裹。')">🏊 泳道图（时序）</span>
+    </div>
     <p style="margin-top:14px;font-size:12px;color:#9ca3af">提示：不勾选任何文档时，AI 仅基于通用知识回答；勾选后 AI 会引用文档原文。</p>
   </div>`;
   updateContextHint();
@@ -507,6 +524,121 @@ async function delDoc(id){
 if(window.marked){
   marked.setOptions({gfm:true, breaks:true, headerIds:false, mangle:false});
 }
+if(window.mermaid){
+  mermaid.initialize({startOnLoad:false, theme:'default',
+    flowchart:{useMaxWidth:true, htmlLabels:true, curve:'basis'},
+    sequence:{useMaxWidth:true, mirrorActors:false}});
+}
+
+let mermaidSeq = 0;
+
+/** Find all <pre><code class="language-mermaid"> blocks under root, render to SVG. */
+async function renderMermaidIn(root){
+  if(!window.mermaid) return;
+  const blocks = root.querySelectorAll('pre > code.language-mermaid, code.language-mermaid');
+  for(const codeEl of blocks){
+    const pre = codeEl.parentElement.tagName === 'PRE' ? codeEl.parentElement : codeEl;
+    if(pre.dataset.mermaidRendered) continue;
+    pre.dataset.mermaidRendered = '1';
+    const code = (codeEl.textContent || '').trim();
+    const id = 'mmd-' + (++mermaidSeq);
+    const wrap = document.createElement('div');
+    wrap.className = 'mermaid-wrap';
+    wrap.dataset.code = encodeURIComponent(code);
+    wrap.innerHTML = `<div class="mermaid-svg" id="${id}"></div>
+      <div class="mermaid-actions">
+        <a onclick="summarizeChart(this)">📊 AI 总结这张图</a>
+        <a onclick="exportChartPng(this,'${id}')">💾 导出 PNG</a>
+        <a onclick="viewChartFull(this)">🔍 大图查看</a>
+        <a onclick="copyMermaidCode(this)">📋 复制 Mermaid 代码</a>
+      </div>`;
+    pre.replaceWith(wrap);
+    try{
+      const { svg } = await mermaid.render(id + '-svg', code);
+      document.getElementById(id).innerHTML = svg;
+    }catch(err){
+      document.getElementById(id).innerHTML = `<div class="mermaid-error">⚠️ Mermaid 渲染失败：${escapeHtml(err.message||err)}\n\n代码:\n<code>${escapeHtml(code.substring(0,400))}</code></div>`;
+    }
+  }
+}
+
+function getMermaidCode(actionEl){
+  return decodeURIComponent(actionEl.closest('.mermaid-wrap').dataset.code || '');
+}
+
+function copyMermaidCode(actionEl){
+  const code = getMermaidCode(actionEl);
+  navigator.clipboard.writeText(code).then(
+    ()=>alert('✅ Mermaid 代码已复制'),
+    ()=>alert('复制失败')
+  );
+}
+
+async function summarizeChart(actionEl){
+  const code = getMermaidCode(actionEl);
+  const inp = document.getElementById('chatInput');
+  inp.value = `请基于这张 Mermaid 图，给出：①关键节点 3 条；②识别出的最大 3 个风险；③1~2 条改进建议。\n\n图代码：\n\`\`\`mermaid\n${code}\n\`\`\``;
+  inp.focus();
+  alert('已填入"总结"提示词到输入框，按发送（Ctrl/Cmd+Enter）即可。');
+}
+
+function exportChartPng(actionEl, svgWrapId){
+  const svgWrap = document.getElementById(svgWrapId);
+  const svg = svgWrap.querySelector('svg');
+  if(!svg){ alert('图未渲染'); return; }
+  // Serialize SVG to data URL
+  const xml = new XMLSerializer().serializeToString(svg);
+  const svgDataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+  const img = new Image();
+  img.onload = ()=>{
+    const canvas = document.createElement('canvas');
+    const scale = 2; // 2x for crisp
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0);
+    canvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `图表_${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  };
+  img.onerror = ()=>alert('SVG 转换失败');
+  img.src = svgDataUrl;
+}
+
+function viewChartFull(actionEl){
+  const code = getMermaidCode(actionEl);
+  const win = window.open('', '_blank');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>图表 · ${currentProject?currentProject.name:''}</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"><\/script>
+  <style>
+    body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f7fa;padding:20px;text-align:center}
+    .container{background:#fff;border-radius:12px;padding:30px;max-width:1400px;margin:0 auto;box-shadow:0 0 20px rgba(0,0,0,.05)}
+    h1{margin:0 0 20px;font-size:20px;color:#1f2937}
+    .toolbar{position:fixed;top:16px;right:20px;display:flex;gap:6px}
+    .btn{background:#fff;border:1px solid #ddd;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;text-decoration:none;color:#333}
+    .btn:hover{border-color:#2563eb;color:#2563eb}
+    @media print{.toolbar{display:none}}
+  </style></head><body>
+  <div class="toolbar"><button class="btn" onclick="window.print()">🖨 打印/导出 PDF</button></div>
+  <div class="container">
+    <h1>📊 ${currentProject?escapeHtmlForWin(currentProject.name):''} · 图表</h1>
+    <pre class="mermaid">${escapeHtmlForWin(code)}</pre>
+  </div>
+  <script>mermaid.initialize({startOnLoad:true, theme:'default', flowchart:{useMaxWidth:true, htmlLabels:true}});<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+function escapeHtmlForWin(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 let msgSeq = 0;
 function appendMsg(role, content, refs){
@@ -567,6 +699,7 @@ function openMsgPage(msgId){
   const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <title>AI 方案 · ${escapeHtml(projName)}</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"><\/script>
 <style>
 body{margin:0;font:15px/1.8 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#1f2937}
 .head{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:24px 40px}
@@ -587,6 +720,8 @@ blockquote{border-left:4px solid #2563eb;padding:8px 16px;color:#475569;margin:1
 table{border-collapse:collapse;margin:12px 0;width:100%;font-size:13px}
 th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left}
 th{background:#dbeafe;color:#1e40af;font-weight:600}
+.mermaid{text-align:center;margin:18px 0;background:#fafbfc;border:1px solid #e5e7eb;border-radius:8px;padding:16px}
+.mermaid svg{max-width:100%;height:auto}
 .toolbar{position:fixed;top:16px;right:20px;display:flex;gap:6px}
 .btn{background:#fff;border:1px solid #dde3ec;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;color:#1f2937;text-decoration:none}
 .btn:hover{border-color:#2563eb;color:#2563eb}
@@ -594,7 +729,22 @@ th{background:#dbeafe;color:#1e40af;font-weight:600}
 </style></head><body>
 <div class="head"><h1>AI 方案 · ${escapeHtml(projName)}</h1><small>生成时间：${ts}</small></div>
 <div class="toolbar"><button class="btn" onclick="window.print()">🖨 打印/导出 PDF</button></div>
-<div class="wrap">${body}</div>
+<div class="wrap" id="content">${body}</div>
+<script>
+  // Convert <pre><code class="language-mermaid"> to <pre class="mermaid">
+  document.querySelectorAll('pre > code.language-mermaid').forEach(c=>{
+    const pre = c.parentElement;
+    const newPre = document.createElement('pre');
+    newPre.className = 'mermaid';
+    newPre.textContent = c.textContent;
+    pre.replaceWith(newPre);
+  });
+  if(window.mermaid){
+    mermaid.initialize({startOnLoad:true, theme:'default',
+      flowchart:{useMaxWidth:true, htmlLabels:true, curve:'basis'},
+      sequence:{useMaxWidth:true, mirrorActors:false}});
+  }
+<\/script>
 </body></html>`;
   const win = window.open('', '_blank');
   win.document.open();
@@ -673,6 +823,9 @@ async function sendMsg(){
       </div>`;
     const finalHtml = (window.marked) ? marked.parse(accumulated) : escapeHtml(accumulated);
     bubble.innerHTML = finalHtml + refsHtml + actions;
+    // Render any Mermaid blocks
+    await renderMermaidIn(bubble);
+    wrap.scrollTop = wrap.scrollHeight;
     // Refresh session list (new session may have been created)
     if(document.getElementById('histDrawer').classList.contains('open')) refreshSessions();
   }catch(e){
@@ -730,6 +883,8 @@ async function loadSession(sid){
       if(refMatch){ refs = refMatch[1].split(/,\s*/); content = content.substring(0, refMatch.index); }
       appendMsg(m.role, content, refs);
     }
+    // Render any Mermaid in loaded messages
+    await renderMermaidIn(wrap);
     // re-fetch session title
     const sessions = await api('/api/chat/sessions/'+currentProject.id);
     const cur = sessions.find(s=>s.id===sid);
