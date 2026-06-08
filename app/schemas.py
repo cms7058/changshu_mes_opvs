@@ -82,6 +82,7 @@ class ChatIn(BaseModel):
     project_id: int
     message: str
     stream: bool = False
+    referenced_doc_ids: List[int] = []  # documents to include as context
 
 
 class ChatOut(BaseModel):

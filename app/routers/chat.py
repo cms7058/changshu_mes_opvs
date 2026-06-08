@@ -5,8 +5,12 @@ from sqlmodel import Session, select
 from ..auth import get_current_user, require_project_access
 from ..db import get_session
 from ..llm import chat as llm_chat, chat_stream, healthcheck
-from ..models import ChatSession, ChatMessage, User, AuditLog
+from ..models import ChatSession, ChatMessage, User, AuditLog, Document
 from ..schemas import ChatIn, ChatOut
+
+# Cap each document context to avoid token blow-ups (M2.7 has long context but we still cap)
+PER_DOC_CHAR_CAP = 30000
+TOTAL_CONTEXT_CAP = 120000
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -42,10 +46,50 @@ def send(body: ChatIn, user: User = Depends(get_current_user),
         select(ChatMessage).where(ChatMessage.session_id == cs.id).order_by(ChatMessage.id)
     ).all()
     messages = [{"role": m.role, "content": m.content} for m in history]
-    messages.append({"role": "user", "content": body.message})
 
-    # persist user msg
-    session.add(ChatMessage(session_id=cs.id, role="user", content=body.message))
+    # build context from referenced documents
+    context_block = ""
+    used_docs = []
+    if body.referenced_doc_ids:
+        docs = session.exec(
+            select(Document).where(
+                Document.id.in_(body.referenced_doc_ids),
+                Document.project_id == body.project_id,
+            )
+        ).all()
+        total = 0
+        chunks = []
+        for d in docs:
+            if not d.extracted_text:
+                continue
+            txt = d.extracted_text
+            if len(txt) > PER_DOC_CHAR_CAP:
+                txt = txt[:PER_DOC_CHAR_CAP] + "\n…[已截断]"
+            block = f"\n\n===== 文档：{d.filename} =====\n{txt}"
+            if total + len(block) > TOTAL_CONTEXT_CAP:
+                block = block[: TOTAL_CONTEXT_CAP - total] + "\n…[整体截断]"
+                chunks.append(block)
+                total += len(block)
+                used_docs.append(d.filename + "（部分）")
+                break
+            chunks.append(block)
+            total += len(block)
+            used_docs.append(d.filename)
+        if chunks:
+            context_block = (
+                "以下是用户提供的项目文档原文，请基于这些文档回答问题。"
+                "若文档中无明确依据，请说明"\
+                "不要凭空编造。"
+                + "".join(chunks)
+                + "\n\n===== 用户问题 =====\n"
+            )
+
+    user_content = context_block + body.message if context_block else body.message
+    messages.append({"role": "user", "content": user_content})
+
+    # persist user msg (store original, not the augmented one)
+    refs_label = f"  [📎参考: {', '.join(used_docs)}]" if used_docs else ""
+    session.add(ChatMessage(session_id=cs.id, role="user", content=body.message + refs_label))
     session.commit()
 
     if body.stream:

@@ -2,10 +2,10 @@
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><title>MES 运维智能体</title>
 <style>
-:root{--blue:#2563eb;--blue-soft:#dbeafe;--ink:#1f2937;--muted:#6b7280;--bg:#f5f7fa;--line:#dde3ec}
+:root{--blue:#2563eb;--blue-soft:#dbeafe;--ink:#1f2937;--muted:#6b7280;--bg:#f5f7fa;--line:#dde3ec;--green:#16a34a;--amber:#d97706;--red:#dc2626}
 *{box-sizing:border-box}
 body{margin:0;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);display:flex;height:100vh;overflow:hidden}
-.sidebar{width:260px;background:#1e3a8a;color:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar{width:240px;background:#1e3a8a;color:#fff;display:flex;flex-direction:column;flex-shrink:0}
 .brand{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700}
 .brand small{display:block;font-size:11px;opacity:.7;font-weight:400;margin-top:2px}
 .nav{flex:1;overflow-y:auto;padding:12px 0}
@@ -16,17 +16,21 @@ body{margin:0;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-s
 .user{padding:14px 20px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;display:flex;justify-content:space-between;align-items:center}
 .user a{color:#fff;opacity:.8;text-decoration:none;font-size:11px}
 .user a:hover{opacity:1}
-.main{flex:1;overflow-y:auto;padding:24px 32px}
-h1{margin:0 0 18px;font-size:22px}
-.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:14px}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+h1{margin:0 0 16px;font-size:22px}
+.crumb{font-size:12px;color:var(--muted);margin-bottom:8px}
+.crumb a{color:var(--blue);cursor:pointer}
+.page{flex:1;overflow-y:auto;padding:24px 32px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin-bottom:14px}
 .card h2{margin:0 0 10px;font-size:15px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .btn{padding:7px 14px;background:var(--blue);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}
 .btn:hover{background:#1d4ed8}
 .btn-sec{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn-sec:hover{border-color:var(--blue);color:var(--blue)}
+.btn-sm{padding:4px 10px;font-size:12px}
 input,select,textarea{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit}
-textarea{width:100%;min-height:90px;resize:vertical}
+textarea{width:100%;min-height:60px;resize:vertical}
 table{width:100%;border-collapse:collapse;font-size:13px}
 table th,table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
 table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
@@ -34,23 +38,64 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 .badge.admin{background:#fef3c7;color:#92400e}
 .badge.engineer{background:#dbeafe;color:#1e40af}
 .badge.viewer{background:#e2e8f0;color:#475569}
+.badge.pending{background:#fef3c7;color:#92400e}
+.badge.done{background:#dcfce7;color:#166534}
+.badge.failed{background:#fee2e2;color:#991b1b}
+.badge.unsupported{background:#e2e8f0;color:#475569}
 .muted{color:var(--muted)}
-.chat{display:flex;flex-direction:column;height:calc(100vh - 80px)}
-.chat-msgs{flex:1;overflow-y:auto;padding:14px 0}
-.msg{margin-bottom:14px;display:flex;gap:10px}
+
+/* Workspace: split layout */
+.workspace{flex:1;display:flex;overflow:hidden;height:100%}
+.docs-pane{width:380px;border-right:1px solid var(--line);background:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.chat-pane{flex:1;display:flex;flex-direction:column;background:#f5f7fa;overflow:hidden}
+.pane-head{padding:14px 18px;border-bottom:1px solid var(--line);background:#fff;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.pane-head h2{margin:0;font-size:14px}
+.pane-body{flex:1;overflow-y:auto;padding:12px}
+.doc-row{padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;background:#fff;transition:all .15s}
+.doc-row:hover{border-color:var(--blue)}
+.doc-row.selected{background:#eff6ff;border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+.doc-row .name{font-weight:600;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.doc-row .meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between}
+.doc-row .acts{display:flex;gap:8px;margin-top:6px;font-size:11px}
+.doc-row .acts a{color:var(--blue);cursor:pointer}
+.doc-row .acts a.danger{color:var(--red)}
+.selection-bar{padding:10px 18px;background:#eff6ff;border-top:1px solid var(--line);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.selection-bar b{color:var(--blue)}
+
+/* Chat */
+.chat-head{padding:14px 18px;border-bottom:1px solid var(--line);background:#fff;flex-shrink:0}
+.chat-head h2{margin:0;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.chat-msgs{flex:1;overflow-y:auto;padding:16px 24px}
+.welcome{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px 28px;max-width:760px;margin:20px auto}
+.welcome h3{margin:0 0 8px;font-size:16px}
+.welcome p{margin:6px 0;color:var(--muted);font-size:13px}
+.welcome .step{padding:8px 12px;background:#f8fafc;border-left:3px solid var(--blue);margin:8px 0;border-radius:0 6px 6px 0;font-size:13px}
+.prompt-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{padding:8px 14px;background:#fff;border:1px solid var(--blue);color:var(--blue);border-radius:18px;cursor:pointer;font-size:12px;transition:all .15s}
+.chip:hover{background:var(--blue);color:#fff}
+.msg{margin-bottom:14px;display:flex;gap:10px;max-width:100%}
 .msg .av{width:30px;height:30px;border-radius:50%;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
 .msg.user .av{background:#fef3c7;color:#92400e}
-.msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-width:80%;white-space:pre-wrap}
-.chat-input{display:flex;gap:10px;padding:14px 0;border-top:1px solid var(--line);background:var(--bg)}
-.chat-input textarea{flex:1;min-height:42px;max-height:200px}
+.msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-width:80%;white-space:pre-wrap;line-height:1.7}
+.msg.user .bubble{background:#fef9e7}
+.msg .refs{font-size:11px;color:var(--blue);margin-top:4px}
+.chat-input-wrap{padding:14px 24px;background:#fff;border-top:1px solid var(--line);flex-shrink:0}
+.chat-input{display:flex;gap:10px}
+.chat-input textarea{flex:1;min-height:44px;max-height:200px}
+
+/* Modal */
 .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:50}
 .modal-mask.open{display:flex}
-.modal{background:#fff;border-radius:10px;padding:24px 28px;width:420px;max-width:90vw}
+.modal{background:#fff;border-radius:10px;padding:24px 28px;width:480px;max-width:90vw;max-height:88vh;overflow-y:auto}
 .modal h3{margin:0 0 14px;font-size:16px}
+.modal.wide{width:900px}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:12px;color:#374151;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%}
-.error{color:#dc2626;font-size:12px;margin-top:6px}
+.error{color:var(--red);font-size:12px;margin-top:6px}
+
+/* Preview iframe */
+.preview-frame{width:100%;height:70vh;border:1px solid var(--line);border-radius:8px;background:#fff}
 </style>
 </head>
 <body>
@@ -60,8 +105,6 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
   <div class="nav">
     <div class="nav-section">工作区</div>
     <div class="nav-item active" data-view="projects">📁 项目空间</div>
-    <div class="nav-item" data-view="documents">📄 文档管理</div>
-    <div class="nav-item" data-view="chat">💬 AI 对话</div>
     <div class="nav-section" id="adminSection" style="display:none">管理</div>
     <div class="nav-item" data-view="users" id="usersNav" style="display:none">👥 用户管理</div>
     <div class="nav-item" data-view="health" id="healthNav" style="display:none">🩺 系统状态</div>
@@ -75,7 +118,7 @@ table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
 <div class="main" id="main">加载中…</div>
 
 <div class="modal-mask" id="modal">
-  <div class="modal">
+  <div class="modal" id="modalBox">
     <h3 id="modalTitle"></h3>
     <div id="modalBody"></div>
   </div>
@@ -94,56 +137,64 @@ if(user.role === 'admin'){
 }
 
 let currentProject = null;
+let currentSession = null;
+let docPollInterval = null;
+const selectedDocs = new Set();
 
 async function api(path, opts={}){
-  opts.headers = Object.assign({'Authorization': 'Bearer '+token}, opts.headers||{});
+  opts.headers = Object.assign({'Authorization':'Bearer '+token}, opts.headers||{});
   const r = await fetch(path, opts);
   if(r.status === 401){ logout(); return; }
   if(!r.ok){ const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail||'请求失败'); }
   const ct = r.headers.get('content-type')||'';
   return ct.includes('json') ? r.json() : r.text();
 }
-
 function logout(){ localStorage.clear(); location.href='/login'; }
 
 document.querySelectorAll('.nav-item').forEach(el=>{
   el.onclick = ()=>{
     document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
     el.classList.add('active');
+    if(docPollInterval){ clearInterval(docPollInterval); docPollInterval = null; }
     render(el.dataset.view);
   };
 });
 
-function openModal(title, html){
+function openModal(title, html, wide=false){
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalBox').classList.toggle('wide', wide);
   document.getElementById('modal').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
 document.getElementById('modal').onclick=e=>{ if(e.target.id==='modal') closeModal(); };
 
-/* ============ Projects ============ */
+/* ============ Projects list ============ */
 async function viewProjects(){
+  currentProject = null; selectedDocs.clear(); currentSession = null;
   const main = document.getElementById('main');
-  main.innerHTML = `<h1>项目空间</h1>
+  main.innerHTML = `<div class="page">
+    <h1>项目空间</h1>
+    <p class="muted" style="margin-bottom:14px">点击"进入"打开项目工作区，里面包含文档管理与 AI 对话。</p>
     <div class="row" style="margin-bottom:14px">
       <button class="btn" onclick="newProject()">+ 新建项目</button>
     </div>
-    <div class="card"><table><thead><tr><th>ID</th><th>项目名</th><th>客户</th><th>说明</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="projTbody"></tbody></table></div>`;
+    <div class="card"><table><thead><tr><th>ID</th><th>项目名</th><th>客户</th><th>说明</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="projTbody"></tbody></table></div>
+  </div>`;
   try{
     const list = await api('/api/projects');
     document.getElementById('projTbody').innerHTML = list.map(p=>`
       <tr><td>${p.id}</td><td><b>${p.name}</b></td><td>${p.customer||'-'}</td>
         <td class="muted">${p.description||'-'}</td>
         <td class="muted">${new Date(p.created_at).toLocaleString()}</td>
-        <td><button class="btn btn-sec" onclick="enterProject(${p.id},'${p.name.replace(/'/g,"")}')">进入</button></td></tr>
-    `).join('') || '<tr><td colspan="6" class="muted">暂无项目</td></tr>';
+        <td><button class="btn btn-sm" onclick="enterProject(${p.id},'${(p.name||'').replace(/'/g,"")}')">进入 →</button></td></tr>
+    `).join('') || '<tr><td colspan="6" class="muted">暂无项目，点击上方按钮新建</td></tr>';
   }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
 }
 function newProject(){
   openModal('新建项目', `
-    <div class="field"><label>项目名</label><input id="np_name"></div>
-    <div class="field"><label>客户</label><input id="np_customer"></div>
+    <div class="field"><label>项目名 *</label><input id="np_name" placeholder="例：常熟基地 WMS"></div>
+    <div class="field"><label>客户</label><input id="np_customer" placeholder="例：华域视觉"></div>
     <div class="field"><label>说明</label><textarea id="np_desc"></textarea></div>
     <div class="row" style="justify-content:flex-end">
       <button class="btn btn-sec" onclick="closeModal()">取消</button>
@@ -152,140 +203,253 @@ function newProject(){
 }
 async function submitProject(){
   try{
-    await api('/api/projects', {method:'POST',
-      headers:{'Content-Type':'application/json'},
+    await api('/api/projects', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({name:np_name.value, customer:np_customer.value, description:np_desc.value})});
     closeModal(); viewProjects();
   }catch(e){ alert(e.message); }
 }
 function enterProject(id, name){
   currentProject = {id, name};
-  document.querySelector('.nav-item[data-view="documents"]').click();
+  renderWorkspace();
 }
 
-/* ============ Documents ============ */
-async function viewDocuments(){
+/* ============ Workspace (docs + chat) ============ */
+function renderWorkspace(){
   const main = document.getElementById('main');
-  if(!currentProject){
-    main.innerHTML = '<h1>文档管理</h1><div class="card muted">请先在"项目空间"中选择项目</div>';
-    return;
-  }
-  main.innerHTML = `<h1>文档管理 · ${currentProject.name}</h1>
-    <div class="card">
-      <h2 style="margin-top:0">批量上传</h2>
-      <div class="row" style="margin-bottom:10px;align-items:center">
-        <input type="file" id="upFiles" multiple>
-        <select id="upKind"><option value="orig">未改动</option><option value="rev">修订</option><option value="new">新增</option></select>
-        <button class="btn" onclick="uploadDocs()">上传选中</button>
-        <span class="muted" id="upHint">支持多选，单文件 ≤ 20MB</span>
+  main.innerHTML = `
+    <div class="workspace">
+      <!-- Left: documents -->
+      <div class="docs-pane">
+        <div class="pane-head">
+          <h2>📄 文档（${currentProject.name}）</h2>
+          <button class="btn btn-sm" onclick="openUpload()">+ 上传</button>
+        </div>
+        <div class="pane-body" id="docsList">加载中…</div>
+        <div class="selection-bar">
+          <span>已选 <b id="selCount">0</b> 份作为对话上下文</span>
+          <a onclick="selectedDocs.clear();refreshDocs()" style="color:#6b7280;cursor:pointer;font-size:11px">清空</a>
+        </div>
       </div>
-      <div id="upProgress"></div>
-    </div>
-    <div class="card">
-      <h2 style="margin-top:0">文档列表</h2>
-      <table><thead><tr><th>ID</th><th>文件名</th><th>类型</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody id="docTbody"></tbody></table>
+
+      <!-- Right: chat -->
+      <div class="chat-pane">
+        <div class="chat-head">
+          <h2>
+            <span>💬 AI 诊断与方案</span>
+            <a onclick="viewProjects()" style="font-size:12px;color:#6b7280;cursor:pointer">← 返回项目列表</a>
+          </h2>
+        </div>
+        <div class="chat-msgs" id="chatMsgs"></div>
+        <div class="chat-input-wrap">
+          <div id="contextHint" class="muted" style="font-size:11px;margin-bottom:6px"></div>
+          <div class="chat-input">
+            <textarea id="chatInput" placeholder="输入你的问题…（Ctrl/Cmd + Enter 发送）" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')sendMsg()"></textarea>
+            <button class="btn" onclick="sendMsg()">发送</button>
+          </div>
+        </div>
+      </div>
     </div>`;
-  await refreshDocList();
+  refreshDocs();
+  renderWelcome();
+  // poll parse status every 4s
+  if(docPollInterval) clearInterval(docPollInterval);
+  docPollInterval = setInterval(refreshDocs, 4000);
 }
-async function refreshDocList(){
+
+function renderWelcome(){
+  const wrap = document.getElementById('chatMsgs');
+  wrap.innerHTML = `<div class="welcome">
+    <h3>👋 欢迎进入 ${currentProject.name} 工作区</h3>
+    <p>这里是 AI 运维诊断中心。下面是推荐的使用流程：</p>
+    <div class="step">① 在左侧 <b>上传</b> 客户提供的 Word/PPT 文档（多选支持）</div>
+    <div class="step">② 等待文档左侧的徽标变为 <span class="badge done">解析完成</span></div>
+    <div class="step">③ 点击文档卡片 <b>勾选</b> 想让 AI 参考的文档</div>
+    <div class="step">④ 在下方输入问题或点击下面的快捷指令</div>
+
+    <p style="margin-top:18px"><b>💡 试试这些快捷指令</b>（点击直接发送）：</p>
+    <div class="prompt-chips">
+      <span class="chip" onclick="useChip('请按 A集成与主数据 / B入库 / C出库与COGI / D车间协同 / E退货调拨 / F上线切换 六大类，把所选文档里的问题梳理为清单，每条包含【编号·标题·严重度·来源】')">📋 梳理问题清单</span>
+      <span class="chip" onclick="useChip('针对所选文档，识别业务流程中的关键风险点和断点，给出 5~10 条优先处理事项')">⚠️ 识别风险点</span>
+      <span class="chip" onclick="useChip('请对所选文档中提到的问题逐项给出：①初步解决思路 ②需要甲方提供的数据库字段/工作流程 ③后续验证方式')">🎯 生成解决方案</span>
+      <span class="chip" onclick="useChip('对比所选文档之间的差异（如自动化 vs 非自动化、原版 vs 修订），列出关键差异表格')">🔍 文档对比</span>
+      <span class="chip" onclick="useChip('为所选文档生成执行摘要（不超过 300 字），适合给项目经理汇报使用')">📝 执行摘要</span>
+      <span class="chip" onclick="useChip('帮我把所选文档中描述的流程拆解为编号步骤，输出 markdown 格式，便于团队评审')">🗂 流程拆解</span>
+    </div>
+    <p style="margin-top:14px;font-size:12px;color:#9ca3af">提示：不勾选任何文档时，AI 仅基于通用知识回答；勾选后 AI 会引用文档原文。</p>
+  </div>`;
+  updateContextHint();
+}
+
+function useChip(text){
+  document.getElementById('chatInput').value = text;
+  document.getElementById('chatInput').focus();
+}
+
+async function refreshDocs(){
+  if(!currentProject) return;
   try{
     const list = await api('/api/documents/by_project/'+currentProject.id);
-    document.getElementById('docTbody').innerHTML = list.map(d=>`
-      <tr><td>${d.id}</td><td>${d.filename}</td><td><span class="badge ${d.kind==='new'?'engineer':d.kind==='rev'?'admin':'viewer'}">${d.kind}</span></td>
-        <td class="muted">${(d.size_bytes/1024).toFixed(1)} KB</td>
-        <td class="muted">${new Date(d.uploaded_at).toLocaleString()}</td>
-        <td><a href="/api/documents/${d.id}/download" target="_blank" onclick="this.href=this.href" >下载</a>
-            <a href="#" onclick="delDoc(${d.id});return false" style="color:#dc2626;margin-left:10px">删除</a></td></tr>
-    `).join('') || '<tr><td colspan="6" class="muted">暂无文档</td></tr>';
+    const sel = selectedDocs;
+    const list_el = document.getElementById('docsList');
+    if(!list_el) return;
+    if(!list.length){
+      list_el.innerHTML = '<div class="muted" style="padding:20px;text-align:center">暂无文档<br>点击右上"+ 上传"添加</div>';
+    } else {
+      list_el.innerHTML = list.map(d=>{
+        const isSel = sel.has(d.id);
+        const status = d.parse_status || 'pending';
+        const stLabel = {pending:'解析中…',done:'解析完成',failed:'解析失败',unsupported:'格式不支持'}[status]||status;
+        const previewable = status==='done';
+        return `<div class="doc-row ${isSel?'selected':''}" onclick="toggleDoc(${d.id})">
+          <div class="name">
+            <input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleDoc(${d.id})">
+            <span style="flex:1">${d.filename}</span>
+          </div>
+          <div class="meta">
+            <span><span class="badge ${status}">${stLabel}</span> · ${(d.size_bytes/1024).toFixed(1)} KB</span>
+            <span class="muted">${new Date(d.uploaded_at).toLocaleString()}</span>
+          </div>
+          <div class="acts">
+            ${previewable?`<a onclick="event.stopPropagation();previewDoc(${d.id},'${d.filename.replace(/'/g,"")}')">👁 预览</a>`:''}
+            <a onclick="event.stopPropagation();reparseDoc(${d.id})">🔄 重新解析</a>
+            <a class="danger" onclick="event.stopPropagation();delDoc(${d.id})">🗑 删除</a>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    document.getElementById('selCount').textContent = sel.size;
+    updateContextHint();
   }catch(e){ console.error(e); }
 }
-async function uploadDocs(){
+
+function toggleDoc(id){
+  if(selectedDocs.has(id)) selectedDocs.delete(id); else selectedDocs.add(id);
+  refreshDocs();
+}
+
+function updateContextHint(){
+  const el = document.getElementById('contextHint');
+  if(!el) return;
+  if(selectedDocs.size === 0) el.textContent = '⚠️ 当前未勾选文档，AI 仅基于通用知识回答';
+  else el.innerHTML = `📎 本次对话将引用 <b style="color:#2563eb">${selectedDocs.size}</b> 份文档作为上下文`;
+}
+
+function openUpload(){
+  openModal('上传文档', `
+    <p class="muted" style="margin-top:0">支持 .docx / .pptx 多选，上传后自动解析（含图片）</p>
+    <div class="field"><input type="file" id="upFiles" multiple></div>
+    <div class="field"><label>文档类型</label>
+      <select id="upKind">
+        <option value="orig">未改动（原版）</option>
+        <option value="rev">修订</option>
+        <option value="new">新增</option>
+      </select>
+    </div>
+    <div id="upProgress"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px">
+      <button class="btn btn-sec" onclick="closeModal()">关闭</button>
+      <button class="btn" onclick="doUpload()">上传</button>
+    </div>`);
+}
+async function doUpload(){
   const files = document.getElementById('upFiles').files;
   if(!files.length){ alert('请至少选择一个文件'); return; }
   const fd = new FormData();
   fd.append('project_id', currentProject.id);
   fd.append('kind', document.getElementById('upKind').value);
-  for(const f of files){ fd.append('files', f); }
+  for(const f of files) fd.append('files', f);
   const prog = document.getElementById('upProgress');
-  prog.innerHTML = `<div class="muted" style="margin-top:8px">⏳ 正在上传 ${files.length} 个文件…</div>`;
+  prog.innerHTML = `<p class="muted">⏳ 上传 ${files.length} 个文件…</p>`;
   try{
     const r = await fetch('/api/documents/upload_batch', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+token}});
     const text = await r.text();
-    let j;
-    try{ j = JSON.parse(text); }
-    catch(_){
-      prog.innerHTML = `<div class="error">服务器返回非 JSON（HTTP ${r.status}）：<pre style="white-space:pre-wrap">${text.substring(0,500).replace(/</g,'&lt;')}</pre></div>`;
-      return;
-    }
-    if(!r.ok){ prog.innerHTML = '<div class="error">'+(j.detail||'上传失败')+'</div>'; return; }
-    const okMsg = j.uploaded.length ? `✅ 成功 ${j.uploaded.length} 个：${j.uploaded.map(x=>x.filename).join(', ')}` : '';
-    const failMsg = j.failed.length ? `<br><span style="color:#dc2626">❌ 失败 ${j.failed.length} 个：${j.failed.map(x=>x.filename+'('+x.error+')').join(', ')}</span>` : '';
-    prog.innerHTML = `<div style="margin-top:8px">${okMsg}${failMsg}</div>`;
+    let j; try{ j = JSON.parse(text); } catch(_){ prog.innerHTML='<div class="error">服务器返回非 JSON：'+text.substring(0,300)+'</div>'; return; }
+    if(!r.ok){ prog.innerHTML = '<div class="error">'+(j.detail||'失败')+'</div>'; return; }
+    const ok = `✅ 成功 ${j.uploaded.length} 个`;
+    const fail = j.failed.length ? `<br><span style="color:#dc2626">❌ 失败 ${j.failed.length}：${j.failed.map(x=>x.filename+'('+x.error+')').join(', ')}</span>` : '';
+    prog.innerHTML = `<p>${ok}${fail}<br><span class="muted" style="font-size:11px">解析在后台进行，几秒后会自动刷新状态</span></p>`;
     document.getElementById('upFiles').value='';
-    await refreshDocList();
+    await refreshDocs();
   }catch(e){ prog.innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+
+async function previewDoc(id, name){
+  openModal('📄 预览：'+name, `<iframe class="preview-frame" id="prevFrame"></iframe>`, true);
+  try{
+    const htmlContent = await api('/api/documents/'+id+'/preview');
+    document.getElementById('prevFrame').srcdoc = htmlContent;
+  }catch(e){ alert(e.message); }
+}
+async function reparseDoc(id){
+  try{ await api('/api/documents/'+id+'/reparse', {method:'POST'}); refreshDocs(); }
+  catch(e){ alert(e.message); }
 }
 async function delDoc(id){
   if(!confirm('确认删除该文档？')) return;
-  try{ await api('/api/documents/'+id, {method:'DELETE'}); refreshDocList(); }
+  selectedDocs.delete(id);
+  try{ await api('/api/documents/'+id, {method:'DELETE'}); refreshDocs(); }
   catch(e){ alert(e.message); }
 }
 
 /* ============ Chat ============ */
-let chatSession = null;
-async function viewChat(){
-  const main = document.getElementById('main');
-  if(!currentProject){
-    main.innerHTML = '<h1>AI 对话</h1><div class="card muted">请先在"项目空间"中选择项目</div>';
-    return;
-  }
-  main.innerHTML = `<h1>AI 对话 · ${currentProject.name}</h1>
-    <div class="chat">
-      <div class="chat-msgs" id="chatMsgs"></div>
-      <div class="chat-input">
-        <textarea id="chatInput" placeholder="请描述客户提出的问题，或粘贴文档片段…" onkeydown="if(event.ctrlKey&&event.key==='Enter')sendMsg()"></textarea>
-        <button class="btn" onclick="sendMsg()">发送 (Ctrl+Enter)</button>
-      </div>
-    </div>`;
-  chatSession = null;
-}
-function appendMsg(role, content){
+function appendMsg(role, content, refs){
   const wrap = document.getElementById('chatMsgs');
+  // remove welcome if exists
+  const w = wrap.querySelector('.welcome'); if(w) w.remove();
   const cls = role==='user'?'user':'assistant';
   const av = role==='user'?'我':'AI';
-  wrap.insertAdjacentHTML('beforeend', `<div class="msg ${cls}"><div class="av">${av}</div><div class="bubble">${content.replace(/</g,'&lt;')}</div></div>`);
+  const refsHtml = refs && refs.length ? `<div class="refs">📎 参考 ${refs.length} 份：${refs.join(', ')}</div>` : '';
+  wrap.insertAdjacentHTML('beforeend', `<div class="msg ${cls}"><div class="av">${av}</div><div class="bubble">${escapeHtml(content)}${refsHtml}</div></div>`);
   wrap.scrollTop = wrap.scrollHeight;
 }
+function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 async function sendMsg(){
   const inp = document.getElementById('chatInput');
   const txt = inp.value.trim(); if(!txt) return;
-  appendMsg('user', txt); inp.value=''; inp.disabled=true;
+  const refDocIds = Array.from(selectedDocs);
+  // collect filenames for display
+  const docRows = document.querySelectorAll('.doc-row.selected .name span:last-child');
+  const refNames = Array.from(docRows).map(el=>el.textContent);
+  appendMsg('user', txt, refNames);
+  inp.value=''; inp.disabled=true;
+  // placeholder bubble
+  const wrap = document.getElementById('chatMsgs');
+  wrap.insertAdjacentHTML('beforeend', `<div class="msg assistant" id="thinking"><div class="av">AI</div><div class="bubble muted">🤔 思考中…</div></div>`);
+  wrap.scrollTop = wrap.scrollHeight;
   try{
     const j = await api('/api/chat', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({project_id:currentProject.id, message:txt, session_id:chatSession})});
-    chatSession = j.session_id;
+      body: JSON.stringify({project_id:currentProject.id, message:txt, session_id:currentSession, referenced_doc_ids:refDocIds})});
+    currentSession = j.session_id;
+    document.getElementById('thinking')?.remove();
     appendMsg('assistant', j.reply);
-  }catch(e){ appendMsg('assistant','⚠️ '+e.message); }
-  finally{ inp.disabled=false; inp.focus(); }
+  }catch(e){
+    document.getElementById('thinking')?.remove();
+    appendMsg('assistant', '⚠️ '+e.message);
+  }finally{
+    inp.disabled=false; inp.focus();
+  }
 }
 
-/* ============ Users (admin only) ============ */
+/* ============ Users (admin) ============ */
 async function viewUsers(){
   const main = document.getElementById('main');
-  main.innerHTML = `<h1>用户管理</h1>
+  main.innerHTML = `<div class="page">
+    <h1>用户管理</h1>
     <div class="row" style="margin-bottom:14px"><button class="btn" onclick="newUser()">+ 新建用户</button></div>
-    <div class="card"><table><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="userTbody"></tbody></table></div>`;
+    <div class="card"><table><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="userTbody"></tbody></table></div>
+  </div>`;
   try{
     const list = await api('/api/users');
     const meId = user.id;
     document.getElementById('userTbody').innerHTML = list.map(u=>{
       const delBtn = u.id !== meId
-        ? `<button class="btn btn-sec" onclick="delUser(${u.id})" style="color:#dc2626">删除</button>` : '';
+        ? `<button class="btn btn-sec btn-sm" onclick="delUser(${u.id})" style="color:#dc2626">删除</button>` : '';
       return `<tr><td>${u.id}</td><td><b>${u.username}</b></td><td>${u.full_name||'-'}</td><td class="muted">${u.email||'-'}</td>
         <td><span class="badge ${u.role}">${u.role}</span></td>
         <td>${u.is_active?'✅启用':'❌禁用'}</td>
-        <td><button class="btn btn-sec" onclick="editUser(${u.id})">编辑</button> ${delBtn}</td></tr>`;
+        <td><button class="btn btn-sec btn-sm" onclick="editUser(${u.id})">编辑</button> ${delBtn}</td></tr>`;
     }).join('');
   }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
 }
@@ -347,18 +511,20 @@ async function delUser(id){
   catch(e){ alert(e.message); }
 }
 
-/* ============ Health + LLM Settings ============ */
+/* ============ Health + Settings ============ */
 async function viewHealth(){
   const main = document.getElementById('main');
-  main.innerHTML = `<h1>系统状态</h1>
+  main.innerHTML = `<div class="page">
+    <h1>系统状态</h1>
     <div class="card" id="hc">检查中…</div>
-    <div class="card" id="cfg">加载配置…</div>`;
+    <div class="card" id="cfg">加载配置…</div>
+  </div>`;
   try{
     const app_h = await api('/api/health');
     const llm_h = await api('/api/chat/health');
     let errBox = '';
     if(!llm_h.ok && llm_h.error){
-      errBox = `<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:10px 14px;margin-top:10px;font-family:monospace;font-size:12px;color:#991b1b;white-space:pre-wrap;word-break:break-all">❌ 错误详情：<br>${(llm_h.error||'').replace(/</g,'&lt;')}</div>`;
+      errBox = `<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:10px 14px;margin-top:10px;font-family:monospace;font-size:12px;color:#991b1b;white-space:pre-wrap;word-break:break-all">❌ 错误详情：<br>${escapeHtml(llm_h.error||'')}</div>`;
     }
     document.getElementById('hc').innerHTML = `
       <h2 style="margin-top:0">系统健康</h2>
@@ -368,26 +534,19 @@ async function viewHealth(){
       <p>端点：<code>${llm_h.base_url||'-'}</code></p>
       ${llm_h.ok?`<p>测试返回：<span class="muted">${llm_h.sample||'-'}</span></p>`:''}
       ${errBox}
-      <button class="btn btn-sec" onclick="viewHealth()" style="margin-top:8px">🔄 重新检测</button>
+      <button class="btn btn-sec btn-sm" onclick="viewHealth()" style="margin-top:8px">🔄 重新检测</button>
     `;
     const s = await api('/api/settings');
     document.getElementById('cfg').innerHTML = `
       <h2 style="margin-top:0">大模型配置（仅管理员）</h2>
-      <p class="muted" style="font-size:12px">在此修改将立即生效，并写入数据库；优先级高于 .env 文件。</p>
+      <p class="muted" style="font-size:12px">修改后立即生效，覆盖 .env 文件设置。</p>
       <div class="field"><label>API Key（当前：${s.minimax_api_key_preview}）</label>
-        <input id="cfg_key" placeholder="留空表示不修改，填入新 key 覆盖" type="password" style="width:100%">
-      </div>
-      <div class="field"><label>模型名</label>
-        <input id="cfg_model" value="${s.minimax_model}" style="width:100%">
-      </div>
-      <div class="field"><label>Base URL</label>
-        <input id="cfg_base" value="${s.minimax_base_url}" style="width:100%">
-      </div>
-      <div class="field"><label>最大 tokens</label>
-        <input id="cfg_max" type="number" value="${s.minimax_max_tokens}" style="width:200px">
-      </div>
+        <input id="cfg_key" placeholder="留空表示不修改" type="password"></div>
+      <div class="field"><label>模型名</label><input id="cfg_model" value="${s.minimax_model}"></div>
+      <div class="field"><label>Base URL</label><input id="cfg_base" value="${s.minimax_base_url}"></div>
+      <div class="field"><label>最大 tokens</label><input id="cfg_max" type="number" value="${s.minimax_max_tokens}"></div>
       <div class="row" style="margin-top:6px">
-        <button class="btn" onclick="saveSettings()">💾 保存配置</button>
+        <button class="btn" onclick="saveSettings()">💾 保存</button>
         <button class="btn btn-sec" onclick="testAfterSave()">💾 保存并立即测试</button>
         <span id="cfgMsg" class="muted"></span>
       </div>
@@ -395,11 +554,7 @@ async function viewHealth(){
   }catch(e){ document.getElementById('hc').innerHTML = '<div class="error">'+e.message+'</div>'; }
 }
 async function saveSettings(){
-  const body = {
-    minimax_model: cfg_model.value.trim(),
-    minimax_base_url: cfg_base.value.trim(),
-    minimax_max_tokens: parseInt(cfg_max.value)||4096,
-  };
+  const body = {minimax_model:cfg_model.value.trim(),minimax_base_url:cfg_base.value.trim(),minimax_max_tokens:parseInt(cfg_max.value)||4096};
   if(cfg_key.value.trim()) body.minimax_api_key = cfg_key.value.trim();
   try{
     await api('/api/settings', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
@@ -407,15 +562,10 @@ async function saveSettings(){
     cfg_key.value = '';
   }catch(e){ cfgMsg.innerHTML = '<span style="color:#dc2626">❌ '+e.message+'</span>'; }
 }
-async function testAfterSave(){
-  await saveSettings();
-  setTimeout(viewHealth, 600);
-}
+async function testAfterSave(){ await saveSettings(); setTimeout(viewHealth, 600); }
 
 function render(view){
   if(view==='projects') viewProjects();
-  else if(view==='documents') viewDocuments();
-  else if(view==='chat') viewChat();
   else if(view==='users') viewUsers();
   else if(view==='health') viewHealth();
 }

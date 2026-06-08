@@ -16,10 +16,41 @@ engine = create_engine(
 )
 
 
+def _migrate_sqlite():
+    """Idempotent column additions for SQLite (we don't use alembic to keep simple)."""
+    from sqlalchemy import text
+    migrations = {
+        "document": [
+            ("parse_status", "TEXT DEFAULT 'pending'"),
+            ("parse_error", "TEXT"),
+            ("extracted_text", "TEXT"),
+            ("extracted_html", "TEXT"),
+            ("asset_dir", "TEXT"),
+            ("parsed_at", "TIMESTAMP"),
+        ],
+    }
+    with engine.connect() as conn:
+        for table, cols in migrations.items():
+            # Get existing columns
+            try:
+                existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            except Exception:
+                existing = set()
+            for col_name, col_def in cols:
+                if col_name not in existing:
+                    try:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+                        print(f"[migrate] added {table}.{col_name}")
+                    except Exception as e:
+                        print(f"[migrate] skip {table}.{col_name}: {e}")
+        conn.commit()
+
+
 def init_db() -> None:
     """Create tables and seed admin user if missing."""
     from . import models  # noqa: F401 — register tables
     SQLModel.metadata.create_all(engine)
+    _migrate_sqlite()
 
     # Seed admin
     from .auth import hash_password

@@ -46,6 +46,13 @@ class Document(SQLModel, table=True):
     kind: str = Field(default="orig")  # orig / rev / new (legacy support)
     uploaded_by: int = Field(foreign_key="user.id")
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    # ===== Parsing results =====
+    parse_status: str = Field(default="pending")  # pending / done / failed / unsupported
+    parse_error: Optional[str] = None
+    extracted_text: Optional[str] = None    # plain text for LLM context
+    extracted_html: Optional[str] = None    # HTML for preview (with <img> tags)
+    asset_dir: Optional[str] = None         # relative dir for extracted images
+    parsed_at: Optional[datetime] = None
 
 
 # ============== Issues / Solutions (for knowledge base seed) ==============
