@@ -1,8 +1,9 @@
 """Document upload + listing (local FS, no MinIO for 2C2G)."""
-import os, uuid
+import os, uuid, sys
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, BackgroundTasks
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlmodel import Session, select
 from ..config import settings
@@ -11,6 +12,13 @@ from ..db import get_session, engine
 from ..models import Document, User, AuditLog
 from ..schemas import DocumentOut
 from ..parsers import parse_file, SUPPORTED
+
+# Dedicated thread pool for parsing — bounded so 2C2G won't OOM
+PARSE_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="parse")
+
+def _submit_parse(doc_id: int):
+    print(f"[parse] SUBMIT doc_id={doc_id} pool_queue={PARSE_POOL._work_queue.qsize()}", flush=True)
+    PARSE_POOL.submit(_parse_document_task, doc_id)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -78,7 +86,6 @@ def _parse_document_task(doc_id: int):
 
 @router.post("/upload", response_model=DocumentOut)
 async def upload(
-    background_tasks: BackgroundTasks,
     project_id: int = Form(...),
     kind: str = Form("orig"),
     version: str = Form("v1"),
@@ -121,14 +128,12 @@ async def upload(
                          payload=f"prj={project_id} name={file.filename}"))
     session.commit()
     session.refresh(doc)
-    # trigger background parse
-    background_tasks.add_task(_parse_document_task, doc.id)
+    _submit_parse(doc.id)
     return doc
 
 
 @router.post("/upload_batch")
 async def upload_batch(
-    background_tasks: BackgroundTasks,
     project_id: int = Form(...),
     kind: str = Form("orig"),
     version: str = Form("v1"),
@@ -169,7 +174,7 @@ async def upload_batch(
             session.add(doc)
             session.commit()
             session.refresh(doc)
-            background_tasks.add_task(_parse_document_task, doc.id)
+            _submit_parse(doc.id)
             uploaded.append({
                 "id": doc.id,
                 "project_id": doc.project_id,
@@ -266,7 +271,7 @@ def get_asset(doc_id: int, name: str, user: User = Depends(get_current_user),
 
 
 @router.post("/reparse_all/{project_id}")
-def reparse_all(project_id: int, background_tasks: BackgroundTasks,
+def reparse_all(project_id: int,
                 user: User = Depends(get_current_user),
                 session: Session = Depends(get_session)):
     """Re-queue parse for all non-done docs in a project (useful after migration)."""
@@ -283,12 +288,12 @@ def reparse_all(project_id: int, background_tasks: BackgroundTasks,
         session.add(d)
     session.commit()
     for d in docs:
-        background_tasks.add_task(_parse_document_task, d.id)
+        _submit_parse(d.id)
     return {"queued": len(docs), "doc_ids": [d.id for d in docs]}
 
 
 @router.post("/{doc_id}/reparse")
-def reparse(doc_id: int, background_tasks: BackgroundTasks,
+def reparse(doc_id: int,
             user: User = Depends(get_current_user),
             session: Session = Depends(get_session)):
     doc = session.get(Document, doc_id)
@@ -298,7 +303,7 @@ def reparse(doc_id: int, background_tasks: BackgroundTasks,
     doc.parse_status = "pending"
     doc.parse_error = None
     session.add(doc); session.commit()
-    background_tasks.add_task(_parse_document_task, doc_id)
+    _submit_parse(doc_id)
     return {"ok": True}
 
 
