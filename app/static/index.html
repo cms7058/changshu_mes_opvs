@@ -391,9 +391,9 @@ function renderWelcome(){
     </div>
     <p style="margin-top:14px"><b>📊 图表生成</b>（点击让 AI 输出 Mermaid 流程图，自动渲染）：</p>
     <div class="prompt-chips">
-      <span class="chip" onclick="useChip('请基于所选文档生成一张【业务流程图】，输出 mermaid flowchart TD 格式（不要 LR 太宽）。要求：①识别主要业务节点（如收货/上架/领料/报工/入库/发货）；②对每个有问题的节点用 \\\\\\\\\\\\\\\":::problem\\\\\\\\\\\\\\\" 类标记，并在节点名后加上问题编号（如 C3）；③在 mermaid 代码前用 1~2 句话介绍流程概览；④代码用 ```mermaid 包裹。\\n\\n参考定义：\\nclassDef problem fill:#fee2e2,stroke:#dc2626')">📊 业务流程图</span>
-      <span class="chip" onclick="useChip('请基于所选文档中提到的问题，生成一张【问题分布图】，输出 mermaid flowchart LR 格式。要求：①按 A/B/C/D/E/F 六大类分组（用 subgraph）；②节点标题包含问题编号和简短标题（如 \\\\\\\\\\\\\\\"C3 集中报工\\\\\\\\\\\\\\\"）；③用 :::high / :::mid / :::low 类区分严重度；④代码用 ```mermaid 包裹。\\n\\n参考定义：\\nclassDef high fill:#fee2e2,stroke:#dc2626\\nclassDef mid fill:#fef3c7,stroke:#d97706\\nclassDef low fill:#dcfce7,stroke:#16a34a')">🎯 问题分布图</span>
-      <span class="chip" onclick="useChip('请基于所选文档生成一张【多角色协作泳道图】，输出 mermaid sequenceDiagram 格式。要求：①识别主要角色（如 客户/SAP/计划物流/WMS/MES/IQC/车间/LDS）；②按时间顺序展示一个核心业务流程（如采购收货全流程）；③在关键消息上注明数据/单据名；④代码用 ```mermaid 包裹。')">🏊 泳道图（时序）</span>
+      <span class="chip" onclick="useChartChip('biz_flow')">📊 业务流程图</span>
+      <span class="chip" onclick="useChartChip('issue_map')">🎯 问题分布图</span>
+      <span class="chip" onclick="useChartChip('swimlane')">🏊 泳道图（时序）</span>
     </div>
     <p style="margin-top:14px;font-size:12px;color:#9ca3af">提示：不勾选任何文档时，AI 仅基于通用知识回答；勾选后 AI 会引用文档原文。</p>
   </div>`;
@@ -403,6 +403,69 @@ function renderWelcome(){
 function useChip(text){
   document.getElementById('chatInput').value = text;
   document.getElementById('chatInput').focus();
+}
+
+const CHART_PROMPTS = {
+  biz_flow: `请基于所选文档生成一张【业务流程图】，输出 mermaid flowchart TD 格式。要求：
+①识别主要业务节点（如收货 / 上架 / 领料 / 报工 / 入库 / 发货）；
+②对每个有问题的节点用 :::problem 类标记，并在节点名后加上问题编号（如 C3）；
+③在 mermaid 代码前用 1~2 句话介绍流程概览；
+④代码用三个反引号 mermaid 包裹。
+
+参考样例（你需要替换为真实节点）：
+\`\`\`mermaid
+flowchart TD
+    A[采购订单] --> B[ASN下传]
+    B --> C[扫码收货]:::problem
+    C --> D[IQC质检]
+    D --> E[上架]
+    classDef problem fill:#fee2e2,stroke:#dc2626,color:#991b1b
+\`\`\``,
+  issue_map: `请基于所选文档中提到的问题，生成一张【问题分布图】，输出 mermaid flowchart LR 格式。要求：
+①按 A集成 / B入库 / C出库 / D车间 / E退货 / F上线 六大类分组（用 subgraph）；
+②节点标题包含问题编号和简短标题（如 "C3 集中报工"）；
+③用 :::high / :::mid / :::low 类区分严重度；
+④代码用三个反引号 mermaid 包裹。
+
+参考样例：
+\`\`\`mermaid
+flowchart LR
+    subgraph B入库
+        B1["B1 IQC状态切换易失败"]:::mid
+    end
+    subgraph C出库
+        C3["C3 集中报工"]:::high
+    end
+    classDef high fill:#fee2e2,stroke:#dc2626
+    classDef mid fill:#fef3c7,stroke:#d97706
+    classDef low fill:#dcfce7,stroke:#16a34a
+\`\`\``,
+  swimlane: `请基于所选文档生成一张【多角色协作泳道图】，输出 mermaid sequenceDiagram 格式。要求：
+①识别主要角色（如 客户 / SAP / 计划物流 / WMS / MES / IQC / 车间 / LDS 等）；
+②按时间顺序展示一个核心业务流程（如采购收货全流程）；
+③在关键消息上注明数据/单据名；
+④代码用三个反引号 mermaid 包裹。
+
+参考样例：
+\`\`\`mermaid
+sequenceDiagram
+    participant 供应商
+    participant SAP
+    participant WMS
+    participant IQC
+    供应商->>SAP: 创建 ASN
+    SAP->>WMS: 下传 ASN
+    WMS->>IQC: 提交质检
+    IQC-->>WMS: 合格判定
+\`\`\``,
+};
+
+function useChartChip(key){
+  const txt = CHART_PROMPTS[key];
+  if(!txt){ alert('未知模板'); return; }
+  const inp = document.getElementById('chatInput');
+  inp.value = txt;
+  inp.focus();
 }
 
 async function refreshDocs(){
