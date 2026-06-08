@@ -28,8 +28,10 @@ def chat(messages: List[Dict[str, Any]], system: str | None = None,
     resp = client.messages.create(**kwargs)
     parts = []
     for block in resp.content:
-        if hasattr(block, "text"):
-            parts.append(block.text)
+        # M2 推理模型会先返回 thinking 块（text=None），过滤掉
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
     return "".join(parts)
 
 
