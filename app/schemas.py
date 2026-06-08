@@ -74,6 +74,9 @@ class DocumentOut(BaseModel):
     kind: str
     version: str
     uploaded_at: datetime
+    parse_status: Optional[str] = "pending"
+    parse_error: Optional[str] = None
+    parsed_at: Optional[datetime] = None
 
 
 # Chat

@@ -184,6 +184,7 @@ async def upload_batch(
                 "kind": doc.kind,
                 "version": doc.version,
                 "uploaded_at": doc.uploaded_at.isoformat(),
+                "parse_status": doc.parse_status,
             })
         except Exception as e:
             failed.append({"filename": getattr(f, "filename", "?"), "error": str(e)})
