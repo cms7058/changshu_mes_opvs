@@ -222,7 +222,10 @@ function renderWorkspace(){
       <div class="docs-pane">
         <div class="pane-head">
           <h2>📄 文档（${currentProject.name}）</h2>
-          <button class="btn btn-sm" onclick="openUpload()">+ 上传</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sec btn-sm" onclick="reparseAll()" title="重新解析全部未完成的文档">🔄 全部解析</button>
+            <button class="btn btn-sm" onclick="openUpload()">+ 上传</button>
+          </div>
         </div>
         <div class="pane-body" id="docsList">加载中…</div>
         <div class="selection-bar">
@@ -383,6 +386,14 @@ async function previewDoc(id, name){
 async function reparseDoc(id){
   try{ await api('/api/documents/'+id+'/reparse', {method:'POST'}); refreshDocs(); }
   catch(e){ alert(e.message); }
+}
+async function reparseAll(){
+  if(!confirm('对所有未完成的文档触发重新解析？')) return;
+  try{
+    const j = await api('/api/documents/reparse_all/'+currentProject.id, {method:'POST'});
+    alert(`已重新排队 ${j.queued} 份文档`);
+    refreshDocs();
+  }catch(e){ alert(e.message); }
 }
 async function delDoc(id){
   if(!confirm('确认删除该文档？')) return;

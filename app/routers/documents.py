@@ -25,34 +25,55 @@ ALLOWED = {
 
 
 def _parse_document_task(doc_id: int):
-    """Background: parse document, save text+html, replace __ASSET__ placeholder."""
-    from sqlalchemy.orm import sessionmaker
-    Session2 = sessionmaker(bind=engine)
-    with Session2() as s:
-        doc = s.get(Document, doc_id)
-        if not doc: return
-        ext = os.path.splitext(doc.filename)[1].lower()
-        if ext not in SUPPORTED:
-            doc.parse_status = "unsupported"
-            doc.parse_error = f"暂不支持解析 {ext}（目前仅 .docx / .pptx）"
+    """Background: parse document, save text+html with inline image data URIs."""
+    import traceback, sys
+    print(f"[parse] START doc_id={doc_id}", flush=True)
+    try:
+        from sqlalchemy.orm import sessionmaker
+        Session2 = sessionmaker(bind=engine)
+        with Session2() as s:
+            doc = s.get(Document, doc_id)
+            if not doc:
+                print(f"[parse] doc {doc_id} not found", flush=True)
+                return
+            ext = os.path.splitext(doc.filename)[1].lower()
+            print(f"[parse] doc_id={doc_id} file={doc.filename} ext={ext}", flush=True)
+            if ext not in SUPPORTED:
+                doc.parse_status = "unsupported"
+                doc.parse_error = f"暂不支持解析 {ext}（目前仅 .docx / .pptx）"
+                doc.parsed_at = datetime.utcnow()
+                s.add(doc); s.commit()
+                print(f"[parse] doc_id={doc_id} unsupported", flush=True)
+                return
+            abs_file = os.path.join(settings.UPLOAD_DIR, doc.storage_path)
+            asset_dir_rel = os.path.dirname(doc.storage_path) + f"/doc_{doc_id}_assets"
+            asset_dir_abs = os.path.join(settings.UPLOAD_DIR, asset_dir_rel)
+            print(f"[parse] doc_id={doc_id} abs_file={abs_file} exists={os.path.exists(abs_file)}", flush=True)
+            result = parse_file(abs_file, asset_dir_abs)
+            print(f"[parse] doc_id={doc_id} result.status={result['status']} text_len={len(result['text'])} html_len={len(result['html'])}", flush=True)
+            doc.parse_status = result["status"]
+            doc.parse_error = result["error"]
+            doc.extracted_text = result["text"]
+            doc.extracted_html = result["html"]
+            doc.asset_dir = asset_dir_rel if result["status"] == "done" else None
             doc.parsed_at = datetime.utcnow()
             s.add(doc); s.commit()
-            return
-        abs_file = os.path.join(settings.UPLOAD_DIR, doc.storage_path)
-        asset_dir_rel = os.path.dirname(doc.storage_path) + f"/doc_{doc_id}_assets"
-        asset_dir_abs = os.path.join(settings.UPLOAD_DIR, asset_dir_rel)
-        result = parse_file(abs_file, asset_dir_abs)
-        # Replace asset placeholder with actual URL
-        asset_url_prefix = f"/api/documents/{doc_id}/asset"
-        if result["html"]:
-            result["html"] = result["html"].replace("__ASSET__", asset_url_prefix)
-        doc.parse_status = result["status"]
-        doc.parse_error = result["error"]
-        doc.extracted_text = result["text"]
-        doc.extracted_html = result["html"]
-        doc.asset_dir = asset_dir_rel if result["status"] == "done" else None
-        doc.parsed_at = datetime.utcnow()
-        s.add(doc); s.commit()
+            print(f"[parse] DONE doc_id={doc_id} status={result['status']}", flush=True)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[parse] EXCEPTION doc_id={doc_id}: {e}\n{tb}", file=sys.stderr, flush=True)
+        try:
+            from sqlalchemy.orm import sessionmaker
+            Session2 = sessionmaker(bind=engine)
+            with Session2() as s:
+                doc = s.get(Document, doc_id)
+                if doc:
+                    doc.parse_status = "failed"
+                    doc.parse_error = f"{type(e).__name__}: {e}"
+                    doc.parsed_at = datetime.utcnow()
+                    s.add(doc); s.commit()
+        except Exception:
+            pass
 
 
 @router.post("/upload", response_model=DocumentOut)
@@ -242,6 +263,28 @@ def get_asset(doc_id: int, name: str, user: User = Depends(get_current_user),
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="资源不存在")
     return FileResponse(abs_path)
+
+
+@router.post("/reparse_all/{project_id}")
+def reparse_all(project_id: int, background_tasks: BackgroundTasks,
+                user: User = Depends(get_current_user),
+                session: Session = Depends(get_session)):
+    """Re-queue parse for all non-done docs in a project (useful after migration)."""
+    require_project_access(project_id, user, session)
+    docs = session.exec(
+        select(Document).where(
+            Document.project_id == project_id,
+            Document.parse_status != "done",
+        )
+    ).all()
+    for d in docs:
+        d.parse_status = "pending"
+        d.parse_error = None
+        session.add(d)
+    session.commit()
+    for d in docs:
+        background_tasks.add_task(_parse_document_task, d.id)
+    return {"queued": len(docs), "doc_ids": [d.id for d in docs]}
 
 
 @router.post("/{doc_id}/reparse")
