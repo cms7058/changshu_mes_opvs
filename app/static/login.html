@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><title>登录 — MES 运维智能体</title>
+<style>
+body{margin:0;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:linear-gradient(135deg,#1e3a8a,#2563eb);min-height:100vh;display:flex;align-items:center;justify-content:center;color:#1f2937}
+.box{background:#fff;padding:36px 44px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.2);width:360px}
+.box h1{margin:0 0 6px;font-size:20px}
+.box p{margin:0 0 20px;color:#6b7280;font-size:13px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:#374151;margin-bottom:5px}
+.field input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box}
+.field input:focus{outline:none;border-color:#2563eb}
+.btn{width:100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}
+.btn:hover{background:#1d4ed8}
+.err{color:#dc2626;font-size:12px;margin-top:8px;min-height:18px}
+</style>
+</head>
+<body>
+<form class="box" id="loginForm">
+  <h1>MES 运维智能体</h1>
+  <p>请使用工程师账号登录</p>
+  <div class="field"><label>用户名</label><input id="u" required></div>
+  <div class="field"><label>密码</label><input id="p" type="password" required></div>
+  <button class="btn" type="submit">登录</button>
+  <div class="err" id="err"></div>
+</form>
+<script>
+document.getElementById('loginForm').onsubmit = async (e)=>{
+  e.preventDefault();
+  const err = document.getElementById('err'); err.textContent='';
+  const fd = new FormData();
+  fd.append('username', document.getElementById('u').value);
+  fd.append('password', document.getElementById('p').value);
+  try{
+    const r = await fetch('/api/auth/login', {method:'POST', body:fd});
+    if(!r.ok){ const j=await r.json(); err.textContent=j.detail||'登录失败'; return; }
+    const j = await r.json();
+    localStorage.setItem('token', j.access_token);
+    localStorage.setItem('user', JSON.stringify(j.user));
+    location.href = '/';
+  }catch(ex){ err.textContent='网络错误：'+ex.message; }
+};
+</script>
+</body></html>

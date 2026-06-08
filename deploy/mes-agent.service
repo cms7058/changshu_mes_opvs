@@ -1,0 +1,22 @@
+[Unit]
+Description=MES O&M Intelligent Agent
+After=network.target
+
+[Service]
+Type=simple
+User=mesagent
+WorkingDirectory=/opt/mes-agent
+Environment="PATH=/opt/mes-agent/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/mes-agent/.env
+ExecStart=/opt/mes-agent/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/mes-agent/app.log
+StandardError=append:/var/log/mes-agent/app.err
+
+# Resource limits — friendly to 2C2G
+MemoryMax=1200M
+CPUQuota=180%
+
+[Install]
+WantedBy=multi-user.target

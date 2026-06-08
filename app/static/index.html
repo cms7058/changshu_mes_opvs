@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><title>MES 运维智能体</title>
+<style>
+:root{--blue:#2563eb;--blue-soft:#dbeafe;--ink:#1f2937;--muted:#6b7280;--bg:#f5f7fa;--line:#dde3ec}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);display:flex;height:100vh;overflow:hidden}
+.sidebar{width:260px;background:#1e3a8a;color:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.brand{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700}
+.brand small{display:block;font-size:11px;opacity:.7;font-weight:400;margin-top:2px}
+.nav{flex:1;overflow-y:auto;padding:12px 0}
+.nav-item{padding:10px 20px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
+.nav-item:hover{background:rgba(255,255,255,.08)}
+.nav-item.active{background:rgba(255,255,255,.15);border-left:3px solid #fff;padding-left:17px}
+.nav-section{padding:14px 20px 4px;font-size:11px;text-transform:uppercase;opacity:.6;letter-spacing:.5px}
+.user{padding:14px 20px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.user a{color:#fff;opacity:.8;text-decoration:none;font-size:11px}
+.user a:hover{opacity:1}
+.main{flex:1;overflow-y:auto;padding:24px 32px}
+h1{margin:0 0 18px;font-size:22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:15px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{padding:7px 14px;background:var(--blue);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}
+.btn:hover{background:#1d4ed8}
+.btn-sec{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn-sec:hover{border-color:var(--blue);color:var(--blue)}
+input,select,textarea{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit}
+textarea{width:100%;min-height:90px;resize:vertical}
+table{width:100%;border-collapse:collapse;font-size:13px}
+table th,table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+table th{background:#f8fafc;color:var(--muted);font-weight:600;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge.admin{background:#fef3c7;color:#92400e}
+.badge.engineer{background:#dbeafe;color:#1e40af}
+.badge.viewer{background:#e2e8f0;color:#475569}
+.muted{color:var(--muted)}
+.chat{display:flex;flex-direction:column;height:calc(100vh - 80px)}
+.chat-msgs{flex:1;overflow-y:auto;padding:14px 0}
+.msg{margin-bottom:14px;display:flex;gap:10px}
+.msg .av{width:30px;height:30px;border-radius:50%;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+.msg.user .av{background:#fef3c7;color:#92400e}
+.msg .bubble{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-width:80%;white-space:pre-wrap}
+.chat-input{display:flex;gap:10px;padding:14px 0;border-top:1px solid var(--line);background:var(--bg)}
+.chat-input textarea{flex:1;min-height:42px;max-height:200px}
+.modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:50}
+.modal-mask.open{display:flex}
+.modal{background:#fff;border-radius:10px;padding:24px 28px;width:420px;max-width:90vw}
+.modal h3{margin:0 0 14px;font-size:16px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:#374151;margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%}
+.error{color:#dc2626;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="brand">MES 运维智能体<small id="userInfo">加载中…</small></div>
+  <div class="nav">
+    <div class="nav-section">工作区</div>
+    <div class="nav-item active" data-view="projects">📁 项目空间</div>
+    <div class="nav-item" data-view="documents">📄 文档管理</div>
+    <div class="nav-item" data-view="chat">💬 AI 对话</div>
+    <div class="nav-section" id="adminSection" style="display:none">管理</div>
+    <div class="nav-item" data-view="users" id="usersNav" style="display:none">👥 用户管理</div>
+    <div class="nav-item" data-view="health" id="healthNav" style="display:none">🩺 系统状态</div>
+  </div>
+  <div class="user">
+    <span id="username">—</span>
+    <a href="#" onclick="logout()">退出</a>
+  </div>
+</div>
+
+<div class="main" id="main">加载中…</div>
+
+<div class="modal-mask" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+if(!token){ location.href = '/login'; }
+const user = JSON.parse(localStorage.getItem('user')||'{}');
+document.getElementById('username').textContent = user.full_name || user.username || '—';
+document.getElementById('userInfo').textContent = `${user.username} · ${user.role}`;
+if(user.role === 'admin'){
+  document.getElementById('adminSection').style.display='block';
+  document.getElementById('usersNav').style.display='block';
+  document.getElementById('healthNav').style.display='block';
+}
+
+let currentProject = null;
+
+async function api(path, opts={}){
+  opts.headers = Object.assign({'Authorization': 'Bearer '+token}, opts.headers||{});
+  const r = await fetch(path, opts);
+  if(r.status === 401){ logout(); return; }
+  if(!r.ok){ const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail||'请求失败'); }
+  const ct = r.headers.get('content-type')||'';
+  return ct.includes('json') ? r.json() : r.text();
+}
+
+function logout(){ localStorage.clear(); location.href='/login'; }
+
+document.querySelectorAll('.nav-item').forEach(el=>{
+  el.onclick = ()=>{
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    el.classList.add('active');
+    render(el.dataset.view);
+  };
+});
+
+function openModal(title, html){
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+document.getElementById('modal').onclick=e=>{ if(e.target.id==='modal') closeModal(); };
+
+/* ============ Projects ============ */
+async function viewProjects(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<h1>项目空间</h1>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn" onclick="newProject()">+ 新建项目</button>
+    </div>
+    <div class="card"><table><thead><tr><th>ID</th><th>项目名</th><th>客户</th><th>说明</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="projTbody"></tbody></table></div>`;
+  try{
+    const list = await api('/api/projects');
+    document.getElementById('projTbody').innerHTML = list.map(p=>`
+      <tr><td>${p.id}</td><td><b>${p.name}</b></td><td>${p.customer||'-'}</td>
+        <td class="muted">${p.description||'-'}</td>
+        <td class="muted">${new Date(p.created_at).toLocaleString()}</td>
+        <td><button class="btn btn-sec" onclick="enterProject(${p.id},'${p.name.replace(/'/g,"")}')">进入</button></td></tr>
+    `).join('') || '<tr><td colspan="6" class="muted">暂无项目</td></tr>';
+  }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
+}
+function newProject(){
+  openModal('新建项目', `
+    <div class="field"><label>项目名</label><input id="np_name"></div>
+    <div class="field"><label>客户</label><input id="np_customer"></div>
+    <div class="field"><label>说明</label><textarea id="np_desc"></textarea></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitProject()">创建</button>
+    </div>`);
+}
+async function submitProject(){
+  try{
+    await api('/api/projects', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name:np_name.value, customer:np_customer.value, description:np_desc.value})});
+    closeModal(); viewProjects();
+  }catch(e){ alert(e.message); }
+}
+function enterProject(id, name){
+  currentProject = {id, name};
+  document.querySelector('.nav-item[data-view="documents"]').click();
+}
+
+/* ============ Documents ============ */
+async function viewDocuments(){
+  const main = document.getElementById('main');
+  if(!currentProject){
+    main.innerHTML = '<h1>文档管理</h1><div class="card muted">请先在"项目空间"中选择项目</div>';
+    return;
+  }
+  main.innerHTML = `<h1>文档管理 · ${currentProject.name}</h1>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <input type="file" id="upFile">
+        <select id="upKind"><option value="orig">未改动</option><option value="rev">修订</option><option value="new">新增</option></select>
+        <button class="btn" onclick="uploadDoc()">上传</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>文件名</th><th>类型</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody id="docTbody"></tbody></table>
+    </div>`;
+  try{
+    const list = await api('/api/documents/by_project/'+currentProject.id);
+    document.getElementById('docTbody').innerHTML = list.map(d=>`
+      <tr><td>${d.id}</td><td>${d.filename}</td><td><span class="badge ${d.kind==='new'?'engineer':d.kind==='rev'?'admin':'viewer'}">${d.kind}</span></td>
+        <td class="muted">${(d.size_bytes/1024).toFixed(1)} KB</td>
+        <td class="muted">${new Date(d.uploaded_at).toLocaleString()}</td>
+        <td><a href="/api/documents/${d.id}/download?token=${token}" target="_blank">下载</a></td></tr>
+    `).join('') || '<tr><td colspan="6" class="muted">暂无文档</td></tr>';
+  }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
+}
+async function uploadDoc(){
+  const f = document.getElementById('upFile').files[0];
+  if(!f){ alert('请选择文件'); return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('project_id', currentProject.id);
+  fd.append('kind', document.getElementById('upKind').value);
+  try{
+    const r = await fetch('/api/documents/upload', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok){ const j=await r.json(); alert(j.detail||'上传失败'); return; }
+    viewDocuments();
+  }catch(e){ alert(e.message); }
+}
+
+/* ============ Chat ============ */
+let chatSession = null;
+async function viewChat(){
+  const main = document.getElementById('main');
+  if(!currentProject){
+    main.innerHTML = '<h1>AI 对话</h1><div class="card muted">请先在"项目空间"中选择项目</div>';
+    return;
+  }
+  main.innerHTML = `<h1>AI 对话 · ${currentProject.name}</h1>
+    <div class="chat">
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-input">
+        <textarea id="chatInput" placeholder="请描述客户提出的问题，或粘贴文档片段…" onkeydown="if(event.ctrlKey&&event.key==='Enter')sendMsg()"></textarea>
+        <button class="btn" onclick="sendMsg()">发送 (Ctrl+Enter)</button>
+      </div>
+    </div>`;
+  chatSession = null;
+}
+function appendMsg(role, content){
+  const wrap = document.getElementById('chatMsgs');
+  const cls = role==='user'?'user':'assistant';
+  const av = role==='user'?'我':'AI';
+  wrap.insertAdjacentHTML('beforeend', `<div class="msg ${cls}"><div class="av">${av}</div><div class="bubble">${content.replace(/</g,'&lt;')}</div></div>`);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+async function sendMsg(){
+  const inp = document.getElementById('chatInput');
+  const txt = inp.value.trim(); if(!txt) return;
+  appendMsg('user', txt); inp.value=''; inp.disabled=true;
+  try{
+    const j = await api('/api/chat', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_id:currentProject.id, message:txt, session_id:chatSession})});
+    chatSession = j.session_id;
+    appendMsg('assistant', j.reply);
+  }catch(e){ appendMsg('assistant','⚠️ '+e.message); }
+  finally{ inp.disabled=false; inp.focus(); }
+}
+
+/* ============ Users (admin only) ============ */
+async function viewUsers(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<h1>用户管理</h1>
+    <div class="row" style="margin-bottom:14px"><button class="btn" onclick="newUser()">+ 新建用户</button></div>
+    <div class="card"><table><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="userTbody"></tbody></table></div>`;
+  try{
+    const list = await api('/api/users');
+    const meId = user.id;
+    document.getElementById('userTbody').innerHTML = list.map(u=>{
+      const delBtn = u.id !== meId
+        ? `<button class="btn btn-sec" onclick="delUser(${u.id})" style="color:#dc2626">删除</button>` : '';
+      return `<tr><td>${u.id}</td><td><b>${u.username}</b></td><td>${u.full_name||'-'}</td><td class="muted">${u.email||'-'}</td>
+        <td><span class="badge ${u.role}">${u.role}</span></td>
+        <td>${u.is_active?'✅启用':'❌禁用'}</td>
+        <td><button class="btn btn-sec" onclick="editUser(${u.id})">编辑</button> ${delBtn}</td></tr>`;
+    }).join('');
+  }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
+}
+function newUser(){
+  openModal('新建用户', `
+    <div class="field"><label>用户名</label><input id="nu_username"></div>
+    <div class="field"><label>密码</label><input id="nu_password" type="password"></div>
+    <div class="field"><label>姓名</label><input id="nu_fullname"></div>
+    <div class="field"><label>邮箱</label><input id="nu_email"></div>
+    <div class="field"><label>角色</label><select id="nu_role">
+      <option value="engineer">engineer（工程师）</option>
+      <option value="admin">admin（管理员）</option>
+      <option value="viewer">viewer（只读）</option>
+    </select></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitUser()">创建</button>
+    </div>`);
+}
+async function submitUser(){
+  try{
+    await api('/api/users', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:nu_username.value, password:nu_password.value,
+        full_name:nu_fullname.value, email:nu_email.value, role:nu_role.value})});
+    closeModal(); viewUsers();
+  }catch(e){ alert(e.message); }
+}
+async function editUser(id){
+  const list = await api('/api/users'); const u = list.find(x=>x.id===id);
+  openModal('编辑用户 — '+u.username, `
+    <div class="field"><label>姓名</label><input id="eu_fullname" value="${u.full_name||''}"></div>
+    <div class="field"><label>邮箱</label><input id="eu_email" value="${u.email||''}"></div>
+    <div class="field"><label>角色</label><select id="eu_role">
+      <option value="engineer" ${u.role==='engineer'?'selected':''}>engineer</option>
+      <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+      <option value="viewer" ${u.role==='viewer'?'selected':''}>viewer</option>
+    </select></div>
+    <div class="field"><label>状态</label><select id="eu_active">
+      <option value="true" ${u.is_active?'selected':''}>启用</option>
+      <option value="false" ${!u.is_active?'selected':''}>禁用</option>
+    </select></div>
+    <div class="field"><label>新密码（留空不改）</label><input id="eu_pwd" type="password"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitEditUser(${id})">保存</button>
+    </div>`);
+}
+async function submitEditUser(id){
+  const body = {full_name:eu_fullname.value, email:eu_email.value, role:eu_role.value, is_active:eu_active.value==='true'};
+  if(eu_pwd.value) body.password = eu_pwd.value;
+  try{
+    await api('/api/users/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    closeModal(); viewUsers();
+  }catch(e){ alert(e.message); }
+}
+async function delUser(id){
+  if(!confirm('确认删除该用户？')) return;
+  try{ await api('/api/users/'+id,{method:'DELETE'}); viewUsers(); }
+  catch(e){ alert(e.message); }
+}
+
+/* ============ Health ============ */
+async function viewHealth(){
+  const main = document.getElementById('main');
+  main.innerHTML = '<h1>系统状态</h1><div class="card" id="hc">检查中…</div>';
+  try{
+    const app_h = await api('/api/health');
+    const llm_h = await api('/api/chat/health');
+    document.getElementById('hc').innerHTML = `
+      <h2>应用</h2>
+      <p>状态：<b>${app_h.status}</b> · 环境：${app_h.env}</p>
+      <h2>MiniMax 大模型</h2>
+      <p>连通性：<b style="color:${llm_h.ok?'#16a34a':'#dc2626'}">${llm_h.ok?'✅ 正常':'❌ 失败'}</b></p>
+      <p>模型：<code>${llm_h.model||'-'}</code></p>
+      <p>测试返回：<span class="muted">${llm_h.sample||llm_h.error||'-'}</span></p>
+    `;
+  }catch(e){ document.getElementById('hc').innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+
+function render(view){
+  if(view==='projects') viewProjects();
+  else if(view==='documents') viewDocuments();
+  else if(view==='chat') viewChat();
+  else if(view==='users') viewUsers();
+  else if(view==='health') viewHealth();
+}
+render('projects');
+</script>
+</body></html>
