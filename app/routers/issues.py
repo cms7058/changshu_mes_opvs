@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
-from sqlalchemy.orm import sessionmaker
 from ..auth import get_current_user, require_project_access, require_role
 from ..db import get_session, engine
 from ..models import Issue, Document, User, AuditLog
@@ -123,9 +122,8 @@ def _extract_json_array(text: str) -> list:
 def _extract_one_doc(project_id: int, doc_id: int, user_id: int, replace: bool):
     """Background: extract issues from one document via LLM."""
     print(f"[extract] START project={project_id} doc_id={doc_id}", flush=True)
-    Session2 = sessionmaker(bind=engine)
     try:
-        with Session2() as s:
+        with Session(engine) as s:
             doc = s.get(Document, doc_id)
             if not doc:
                 print(f"[extract] doc {doc_id} not found", flush=True); return
