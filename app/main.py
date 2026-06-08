@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 import os
 from .config import settings
 from .db import init_db
-from .routers import auth, users, projects, documents, chat
+from .routers import auth, users, projects, documents, chat, settings as settings_router
 
 app = FastAPI(title=settings.APP_NAME, version="0.1.0")
 
@@ -36,6 +36,7 @@ app.include_router(users.router)
 app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(settings_router.router)
 
 # Static frontend
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

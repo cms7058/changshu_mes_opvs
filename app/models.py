@@ -87,6 +87,14 @@ class ChatMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+# ============== Runtime settings (overrides .env) ==============
+class AppSetting(SQLModel, table=True):
+    key: str = Field(primary_key=True, max_length=64)
+    value: str
+    updated_by: Optional[int] = Field(default=None, foreign_key="user.id")
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ============== Audit log ==============
 class AuditLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

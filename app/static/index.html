@@ -172,35 +172,57 @@ async function viewDocuments(){
   }
   main.innerHTML = `<h1>文档管理 · ${currentProject.name}</h1>
     <div class="card">
-      <div class="row" style="margin-bottom:10px">
-        <input type="file" id="upFile">
+      <h2 style="margin-top:0">批量上传</h2>
+      <div class="row" style="margin-bottom:10px;align-items:center">
+        <input type="file" id="upFiles" multiple>
         <select id="upKind"><option value="orig">未改动</option><option value="rev">修订</option><option value="new">新增</option></select>
-        <button class="btn" onclick="uploadDoc()">上传</button>
+        <button class="btn" onclick="uploadDocs()">上传选中</button>
+        <span class="muted" id="upHint">支持多选，单文件 ≤ 20MB</span>
       </div>
+      <div id="upProgress"></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">文档列表</h2>
       <table><thead><tr><th>ID</th><th>文件名</th><th>类型</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody id="docTbody"></tbody></table>
     </div>`;
+  await refreshDocList();
+}
+async function refreshDocList(){
   try{
     const list = await api('/api/documents/by_project/'+currentProject.id);
     document.getElementById('docTbody').innerHTML = list.map(d=>`
       <tr><td>${d.id}</td><td>${d.filename}</td><td><span class="badge ${d.kind==='new'?'engineer':d.kind==='rev'?'admin':'viewer'}">${d.kind}</span></td>
         <td class="muted">${(d.size_bytes/1024).toFixed(1)} KB</td>
         <td class="muted">${new Date(d.uploaded_at).toLocaleString()}</td>
-        <td><a href="/api/documents/${d.id}/download?token=${token}" target="_blank">下载</a></td></tr>
+        <td><a href="/api/documents/${d.id}/download" target="_blank" onclick="this.href=this.href" >下载</a>
+            <a href="#" onclick="delDoc(${d.id});return false" style="color:#dc2626;margin-left:10px">删除</a></td></tr>
     `).join('') || '<tr><td colspan="6" class="muted">暂无文档</td></tr>';
-  }catch(e){ main.innerHTML += '<div class="error">'+e.message+'</div>'; }
+  }catch(e){ console.error(e); }
 }
-async function uploadDoc(){
-  const f = document.getElementById('upFile').files[0];
-  if(!f){ alert('请选择文件'); return; }
+async function uploadDocs(){
+  const files = document.getElementById('upFiles').files;
+  if(!files.length){ alert('请至少选择一个文件'); return; }
   const fd = new FormData();
-  fd.append('file', f);
   fd.append('project_id', currentProject.id);
   fd.append('kind', document.getElementById('upKind').value);
+  for(const f of files){ fd.append('files', f); }
+  const prog = document.getElementById('upProgress');
+  prog.innerHTML = `<div class="muted" style="margin-top:8px">⏳ 正在上传 ${files.length} 个文件…</div>`;
   try{
-    const r = await fetch('/api/documents/upload', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+token}});
-    if(!r.ok){ const j=await r.json(); alert(j.detail||'上传失败'); return; }
-    viewDocuments();
-  }catch(e){ alert(e.message); }
+    const r = await fetch('/api/documents/upload_batch', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+token}});
+    const j = await r.json();
+    if(!r.ok){ prog.innerHTML = '<div class="error">'+(j.detail||'上传失败')+'</div>'; return; }
+    const okMsg = j.uploaded.length ? `✅ 成功 ${j.uploaded.length} 个：${j.uploaded.map(x=>x.filename).join(', ')}` : '';
+    const failMsg = j.failed.length ? `<br><span style="color:#dc2626">❌ 失败 ${j.failed.length} 个：${j.failed.map(x=>x.filename+'('+x.error+')').join(', ')}</span>` : '';
+    prog.innerHTML = `<div style="margin-top:8px">${okMsg}${failMsg}</div>`;
+    document.getElementById('upFiles').value='';
+    await refreshDocList();
+  }catch(e){ prog.innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+async function delDoc(id){
+  if(!confirm('确认删除该文档？')) return;
+  try{ await api('/api/documents/'+id, {method:'DELETE'}); refreshDocList(); }
+  catch(e){ alert(e.message); }
 }
 
 /* ============ Chat ============ */
@@ -319,22 +341,64 @@ async function delUser(id){
   catch(e){ alert(e.message); }
 }
 
-/* ============ Health ============ */
+/* ============ Health + LLM Settings ============ */
 async function viewHealth(){
   const main = document.getElementById('main');
-  main.innerHTML = '<h1>系统状态</h1><div class="card" id="hc">检查中…</div>';
+  main.innerHTML = `<h1>系统状态</h1>
+    <div class="card" id="hc">检查中…</div>
+    <div class="card" id="cfg">加载配置…</div>`;
   try{
     const app_h = await api('/api/health');
     const llm_h = await api('/api/chat/health');
     document.getElementById('hc').innerHTML = `
-      <h2>应用</h2>
-      <p>状态：<b>${app_h.status}</b> · 环境：${app_h.env}</p>
-      <h2>MiniMax 大模型</h2>
-      <p>连通性：<b style="color:${llm_h.ok?'#16a34a':'#dc2626'}">${llm_h.ok?'✅ 正常':'❌ 失败'}</b></p>
-      <p>模型：<code>${llm_h.model||'-'}</code></p>
+      <h2 style="margin-top:0">系统健康</h2>
+      <p>应用状态：<b>${app_h.status}</b> · 环境：${app_h.env}</p>
+      <p>MiniMax 连通性：<b style="color:${llm_h.ok?'#16a34a':'#dc2626'}">${llm_h.ok?'✅ 正常':'❌ 失败'}</b></p>
+      <p>当前模型：<code>${llm_h.model||'-'}</code></p>
+      <p>端点：<code>${llm_h.base_url||'-'}</code></p>
       <p>测试返回：<span class="muted">${llm_h.sample||llm_h.error||'-'}</span></p>
+      <button class="btn btn-sec" onclick="viewHealth()">🔄 重新检测</button>
+    `;
+    const s = await api('/api/settings');
+    document.getElementById('cfg').innerHTML = `
+      <h2 style="margin-top:0">大模型配置（仅管理员）</h2>
+      <p class="muted" style="font-size:12px">在此修改将立即生效，并写入数据库；优先级高于 .env 文件。</p>
+      <div class="field"><label>API Key（当前：${s.minimax_api_key_preview}）</label>
+        <input id="cfg_key" placeholder="留空表示不修改，填入新 key 覆盖" type="password" style="width:100%">
+      </div>
+      <div class="field"><label>模型名</label>
+        <input id="cfg_model" value="${s.minimax_model}" style="width:100%">
+      </div>
+      <div class="field"><label>Base URL</label>
+        <input id="cfg_base" value="${s.minimax_base_url}" style="width:100%">
+      </div>
+      <div class="field"><label>最大 tokens</label>
+        <input id="cfg_max" type="number" value="${s.minimax_max_tokens}" style="width:200px">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn" onclick="saveSettings()">💾 保存配置</button>
+        <button class="btn btn-sec" onclick="testAfterSave()">💾 保存并立即测试</button>
+        <span id="cfgMsg" class="muted"></span>
+      </div>
     `;
   }catch(e){ document.getElementById('hc').innerHTML = '<div class="error">'+e.message+'</div>'; }
+}
+async function saveSettings(){
+  const body = {
+    minimax_model: cfg_model.value.trim(),
+    minimax_base_url: cfg_base.value.trim(),
+    minimax_max_tokens: parseInt(cfg_max.value)||4096,
+  };
+  if(cfg_key.value.trim()) body.minimax_api_key = cfg_key.value.trim();
+  try{
+    await api('/api/settings', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    cfgMsg.innerHTML = '<span style="color:#16a34a">✅ 已保存</span>';
+    cfg_key.value = '';
+  }catch(e){ cfgMsg.innerHTML = '<span style="color:#dc2626">❌ '+e.message+'</span>'; }
+}
+async function testAfterSave(){
+  await saveSettings();
+  setTimeout(viewHealth, 600);
 }
 
 function render(view){

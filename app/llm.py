@@ -1,22 +1,17 @@
-"""MiniMax LLM client (via Anthropic-compatible endpoint)."""
+"""MiniMax LLM client (via Anthropic-compatible endpoint).
+Reads config from runtime_settings (DB-overridable), falls back to .env."""
 from typing import Iterable, List, Dict, Any
 from anthropic import Anthropic
-from .config import settings
-
-
-_client: Anthropic | None = None
+from . import runtime_settings as rs
 
 
 def get_client() -> Anthropic:
-    global _client
-    if _client is None:
-        if not settings.MINIMAX_API_KEY or settings.MINIMAX_API_KEY.startswith("sk-cp-REPLACE"):
-            raise RuntimeError("MINIMAX_API_KEY 未配置，请编辑 .env 后重启服务")
-        _client = Anthropic(
-            api_key=settings.MINIMAX_API_KEY,
-            base_url=settings.MINIMAX_BASE_URL,
-        )
-    return _client
+    """Always builds a fresh client based on current DB/env settings.
+    Cheap to construct; avoids stale state when admin updates key in UI."""
+    key = rs.llm_api_key()
+    if not key or key.startswith("sk-cp-REPLACE"):
+        raise RuntimeError("MINIMAX_API_KEY 未配置，请在【系统状态】或 .env 中设置")
+    return Anthropic(api_key=key, base_url=rs.llm_base_url())
 
 
 def chat(messages: List[Dict[str, Any]], system: str | None = None,
@@ -24,14 +19,13 @@ def chat(messages: List[Dict[str, Any]], system: str | None = None,
     """Single-turn synchronous chat. Returns assistant text."""
     client = get_client()
     kwargs = {
-        "model": model or settings.MINIMAX_MODEL,
-        "max_tokens": max_tokens or settings.MINIMAX_MAX_TOKENS,
+        "model": model or rs.llm_model(),
+        "max_tokens": max_tokens or rs.llm_max_tokens(),
         "messages": messages,
     }
     if system:
         kwargs["system"] = system
     resp = client.messages.create(**kwargs)
-    # Concatenate text blocks
     parts = []
     for block in resp.content:
         if hasattr(block, "text"):
@@ -41,11 +35,10 @@ def chat(messages: List[Dict[str, Any]], system: str | None = None,
 
 def chat_stream(messages: List[Dict[str, Any]], system: str | None = None,
                 max_tokens: int | None = None) -> Iterable[str]:
-    """Server-Sent-Events streaming generator yielding text deltas."""
     client = get_client()
     kwargs = {
-        "model": settings.MINIMAX_MODEL,
-        "max_tokens": max_tokens or settings.MINIMAX_MAX_TOKENS,
+        "model": rs.llm_model(),
+        "max_tokens": max_tokens or rs.llm_max_tokens(),
         "messages": messages,
     }
     if system:
@@ -56,9 +49,10 @@ def chat_stream(messages: List[Dict[str, Any]], system: str | None = None,
 
 
 def healthcheck() -> dict:
-    """Lightweight ping — sends a 1-token request."""
     try:
         txt = chat([{"role": "user", "content": "ping"}], max_tokens=8)
-        return {"ok": True, "model": settings.MINIMAX_MODEL, "sample": txt[:50]}
+        return {"ok": True, "model": rs.llm_model(), "base_url": rs.llm_base_url(),
+                "sample": txt[:50]}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "model": rs.llm_model(), "base_url": rs.llm_base_url(),
+                "error": str(e)}

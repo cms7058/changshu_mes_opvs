@@ -3,6 +3,7 @@ import os, uuid
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlmodel import Session, select
 from ..config import settings
 from ..auth import get_current_user, require_project_access
@@ -67,6 +68,63 @@ async def upload(
     session.commit()
     session.refresh(doc)
     return doc
+
+
+class BatchResult(BaseModel):
+    uploaded: List[DocumentOut]
+    failed: List[dict]
+
+
+@router.post("/upload_batch", response_model=BatchResult)
+async def upload_batch(
+    project_id: int = Form(...),
+    kind: str = Form("orig"),
+    version: str = Form("v1"),
+    files: List[UploadFile] = File(...),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Upload multiple files in one request."""
+    require_project_access(project_id, user, session)
+    project_dir = os.path.join(settings.UPLOAD_DIR, f"project_{project_id}")
+    os.makedirs(project_dir, exist_ok=True)
+
+    uploaded: list[Document] = []
+    failed: list[dict] = []
+    cap = settings.MAX_UPLOAD_MB * 1024 * 1024
+
+    for f in files:
+        try:
+            data = await f.read()
+            if len(data) > cap:
+                failed.append({"filename": f.filename, "error": f"超过 {settings.MAX_UPLOAD_MB}MB 上限"})
+                continue
+            safe_id = uuid.uuid4().hex[:12]
+            safe_name = f"{safe_id}__{f.filename}"
+            abs_path = os.path.join(project_dir, safe_name)
+            with open(abs_path, "wb") as fp:
+                fp.write(data)
+            doc = Document(
+                project_id=project_id,
+                filename=f.filename or safe_name,
+                mime_type=f.content_type or "application/octet-stream",
+                size_bytes=len(data),
+                storage_path=os.path.relpath(abs_path, settings.UPLOAD_DIR),
+                kind=kind,
+                version=version,
+                uploaded_by=user.id,
+            )
+            session.add(doc)
+            session.commit()
+            session.refresh(doc)
+            uploaded.append(doc)
+        except Exception as e:
+            failed.append({"filename": getattr(f, "filename", "?"), "error": str(e)})
+
+    session.add(AuditLog(user_id=user.id, action="doc.upload_batch",
+                         payload=f"prj={project_id} ok={len(uploaded)} fail={len(failed)}"))
+    session.commit()
+    return BatchResult(uploaded=uploaded, failed=failed)
 
 
 @router.get("/by_project/{project_id}", response_model=List[DocumentOut])
